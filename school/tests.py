@@ -2,6 +2,7 @@ from datetime import date, time
 
 from django.contrib.admin.sites import site
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
 
@@ -34,6 +35,7 @@ from .models import (
     SchoolCalendarDay,
     StaffDutyAssignment,
     Student,
+    StudentClassMembership,
     StudentGroup,
     StudentGroupMembership,
     StudentHouseMembership,
@@ -4060,5 +4062,350 @@ class AttendanceCorrectionAuditTests(TestCase):
         )
         self.assertContains(history, "Correction audit")
         self.assertContains(history, f"student={self.student_a.pk}")
+
+
+class StudentClassMembershipTests(TestCase):
+    def setUp(self):
+        self.year = AcademicYear.objects.create(
+            name="2026-27",
+            start_date=date(2026, 4, 1),
+            end_date=date(2027, 3, 31),
+            is_current=True,
+        )
+        self.next_year = AcademicYear.objects.create(
+            name="2027-28",
+            start_date=date(2027, 4, 1),
+            end_date=date(2028, 3, 31),
+        )
+        self.vi_a = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="A",
+            display_name="VI-A",
+        )
+        self.vi_b = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="B",
+            display_name="VI-B",
+        )
+        self.vii_a = ClassSection.objects.create(
+            grade_name="VII",
+            section_name="A",
+            display_name="VII-A",
+        )
+        self.staff = User.objects.create_user(
+            username="class-mem-staff",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.admin_user = User.objects.create_user(
+            username="class-mem-admin",
+            password="x",
+            category=UserCategory.ADMINISTRATION,
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.period = ActivityType.objects.create(
+            name="Period",
+            takes_attendance=True,
+            default_audience_kind=AudienceKind.CLASS,
+        )
+        self.student = Student.objects.create(
+            admission_number="CM1",
+            roll_number=1,
+            first_name="Ada",
+            last_name="A",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.vi_a,
+            academic_year=self.year,
+        )
+        self.day = date(2026, 8, 28)
+        self.class_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Period 3 VI-A",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.vi_a,
+            responsible_staff=self.staff,
+        )
+        self.unmarked_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Period 4 VI-A",
+            start_time=time(9, 40),
+            end_time=time(10, 20),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.vi_a,
+            responsible_staff=self.staff,
+        )
+        self.school_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="School assembly",
+            start_time=time(8, 0),
+            end_time=time(8, 20),
+            audience_kind=AudienceKind.SCHOOL,
+            class_section=None,
+            responsible_staff=self.staff,
+        )
+
+    def test_membership_created_and_unique_per_year(self):
+        memberships = list(self.student.class_memberships.order_by("pk"))
+        self.assertEqual(len(memberships), 1)
+        self.assertEqual(memberships[0].class_section, self.vi_a)
+        self.assertEqual(memberships[0].academic_year, self.year)
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                StudentClassMembership.objects.create(
+                    student=self.student,
+                    class_section=self.vi_b,
+                    academic_year=self.year,
+                )
+
+    def test_multiple_years_and_roster_index_lookup(self):
+        self.student.class_section = self.vii_a
+        self.student.academic_year = self.next_year
+        self.student.save()
+        years = {
+            row.academic_year_id: row.class_section_id
+            for row in self.student.class_memberships.all()
+        }
+        self.assertEqual(years[self.year.pk], self.vi_a.pk)
+        self.assertEqual(years[self.next_year.pk], self.vii_a.pk)
+        found = StudentClassMembership.objects.filter(
+            academic_year=self.year,
+            class_section=self.vi_a,
+        )
+        self.assertEqual(found.get().student, self.student)
+        index_fields = [
+            tuple(index.fields)
+            for index in StudentClassMembership._meta.indexes
+        ]
+        self.assertIn(("academic_year", "class_section"), index_fields)
+
+    def test_backfill_is_safe_and_does_not_duplicate(self):
+        import importlib
+
+        from django.apps import apps
+
+        migration = importlib.import_module(
+            "school.migrations.0006_studentclassmembership"
+        )
+        StudentClassMembership.objects.all().delete()
+        self.assertEqual(StudentClassMembership.objects.count(), 0)
+        migration.backfill_student_class_memberships(apps, None)
+        self.assertEqual(StudentClassMembership.objects.count(), 1)
+        membership = StudentClassMembership.objects.get()
+        self.assertEqual(membership.student, self.student)
+        self.assertEqual(membership.class_section, self.vi_a)
+        self.assertEqual(membership.academic_year, self.year)
+        migration.backfill_student_class_memberships(apps, None)
+        self.assertEqual(StudentClassMembership.objects.count(), 1)
+
+    def test_promotion_keeps_historical_roster_reports_and_history(self):
+        AttendanceEntry.objects.create(
+            activity_session=self.class_session,
+            student=self.student,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.staff,
+        )
+        AttendanceEntry.objects.create(
+            activity_session=self.school_session,
+            student=self.student,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.staff,
+        )
+        self.student.class_section = self.vii_a
+        self.student.academic_year = self.next_year
+        self.student.save()
+
+        old = self.student.class_memberships.get(academic_year=self.year)
+        self.assertEqual(old.class_section, self.vi_a)
+        new = self.student.class_memberships.get(academic_year=self.next_year)
+        self.assertEqual(new.class_section, self.vii_a)
+
+        self.assertEqual(
+            list(students_for_session(self.class_session)),
+            [self.student],
+        )
+        self.assertEqual(
+            list(students_for_session(self.school_session)),
+            [self.student],
+        )
+        self.assertEqual(
+            roster_student_ids_by_session(
+                [self.class_session, self.school_session]
+            ),
+            {
+                self.class_session.pk: {self.student.pk},
+                self.school_session.pk: {self.student.pk},
+            },
+        )
+        self.assertEqual(
+            list(
+                orphan_entries_for_session(
+                    self.class_session,
+                    roster_student_ids_by_session([self.class_session])[
+                        self.class_session.pk
+                    ],
+                )
+            ),
+            [],
+        )
+
+        class_report = build_class_attendance_report(
+            self.vi_a,
+            self.year,
+            [self.class_session],
+        )
+        self.assertEqual(class_report["roster_size"], 1)
+        self.assertEqual(class_report["student_rows"][0]["student"], self.student)
+        self.assertTrue(class_report["student_rows"][0]["on_current_roster"])
+
+        school_report = build_school_attendance_report([self.school_session])
+        self.assertEqual(school_report["distinct_roster_students"], 1)
+        self.assertEqual(school_report["orphan_marks"], 0)
+
+        history = build_student_attendance_history(
+            self.student,
+            [self.class_session, self.unmarked_session],
+        )
+        self.assertEqual(history["total_marked"], 1)
+        self.assertEqual(history["total_eligible"], 2)
+        self.assertFalse(history["marked_rows"][0]["is_orphan"])
+        self.assertEqual(history["unmarked_rows"][0]["session"], self.unmarked_session)
+
+        next_session = ActivitySession.objects.create(
+            date=date(2027, 8, 28),
+            academic_year=self.next_year,
+            activity_type=self.period,
+            name="Period 3 VII-A",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.vii_a,
+            responsible_staff=self.staff,
+        )
+        self.assertEqual(list(students_for_session(next_session)), [self.student])
+        self.assertEqual(list(students_for_session(self.class_session)), [self.student])
+
+    def test_intra_year_section_change_updates_single_membership(self):
+        self.student.class_section = self.vi_b
+        self.student.save()
+        memberships = list(
+            self.student.class_memberships.filter(academic_year=self.year)
+        )
+        self.assertEqual(len(memberships), 1)
+        self.assertEqual(memberships[0].class_section, self.vi_b)
+        self.assertEqual(list(students_for_session(self.class_session)), [])
+        vi_b_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Period 3 VI-B",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.vi_b,
+            responsible_staff=self.staff,
+        )
+        self.assertEqual(list(students_for_session(vi_b_session)), [self.student])
+
+    def test_house_and_group_rosters_unchanged(self):
+        house = House.objects.create(name="Aravali", code="AR")
+        other = Student.objects.create(
+            admission_number="CM2",
+            roll_number=2,
+            first_name="Bea",
+            last_name="B",
+            date_of_birth=date(2014, 1, 2),
+            gender="female",
+            class_section=self.vi_a,
+            academic_year=self.year,
+        )
+        StudentHouseMembership.objects.create(
+            student=other,
+            house=house,
+            academic_year=self.year,
+        )
+        house_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="House roll",
+            start_time=time(7, 0),
+            end_time=time(7, 20),
+            audience_kind=AudienceKind.HOUSE,
+            class_section=None,
+            house=house,
+            responsible_staff=self.staff,
+        )
+        self.assertEqual(list(students_for_session(house_session)), [other])
+        group = StudentGroup.objects.create(name="Band", academic_year=self.year)
+        StudentGroupMembership.objects.create(group=group, student=self.student)
+        group_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Band",
+            start_time=time(16, 0),
+            end_time=time(17, 0),
+            audience_kind=AudienceKind.STUDENT_GROUP,
+            class_section=None,
+            student_group=group,
+            responsible_staff=self.staff,
+        )
+        ActivitySessionParticipant.objects.create(
+            session=group_session,
+            student=other,
+        )
+        self.assertEqual(list(students_for_session(group_session)), [other])
+
+    def test_student_admin_save_syncs_without_deleting_history(self):
+        request = RequestFactory().post("/")
+        request.user = self.admin_user
+        admin_instance = site._registry[Student]
+        self.student.class_section = self.vii_a
+        self.student.academic_year = self.next_year
+        admin_instance.save_model(request, self.student, form=None, change=True)
+        self.assertEqual(self.student.class_memberships.count(), 2)
+        self.assertEqual(
+            self.student.class_memberships.get(academic_year=self.year).class_section,
+            self.vi_a,
+        )
+        self.assertEqual(
+            self.student.class_memberships.get(
+                academic_year=self.next_year
+            ).class_section,
+            self.vii_a,
+        )
+        self.student.class_section = self.vi_b
+        self.student.academic_year = self.next_year
+        admin_instance.save_model(request, self.student, form=None, change=True)
+        self.assertEqual(self.student.class_memberships.count(), 2)
+        self.assertEqual(
+            self.student.class_memberships.get(
+                academic_year=self.next_year
+            ).class_section,
+            self.vi_b,
+        )
+        self.client.force_login(self.admin_user)
+        changelist = self.client.get(reverse("admin:school_student_changelist"))
+        self.assertEqual(changelist.status_code, 200)
+        membership_list = self.client.get(
+            reverse("admin:school_studentclassmembership_changelist")
+        )
+        self.assertContains(membership_list, "VI-A")
+        self.assertContains(membership_list, "VI-B")
+        change = self.client.get(
+            reverse("admin:school_student_change", args=[self.student.pk])
+        )
+        self.assertContains(change, "Class placement history")
 
 

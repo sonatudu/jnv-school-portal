@@ -1,7 +1,8 @@
 """Student roster for session-level attendance marking.
 
-Class, house, and school rosters are live. Group and selected-student
-rosters use the ActivitySessionParticipant snapshot only.
+Class and school rosters use StudentClassMembership for the session's
+academic year. House rosters use StudentHouseMembership. Group and
+selected-student rosters use the ActivitySessionParticipant snapshot only.
 """
 
 from collections import defaultdict
@@ -14,6 +15,7 @@ from .models import (
     AttendanceStatus,
     AudienceKind,
     Student,
+    StudentClassMembership,
     StudentHouseMembership,
 )
 
@@ -36,9 +38,12 @@ def students_for_session(session):
     if kind == AudienceKind.CLASS:
         if not session.class_section_id or not session.academic_year_id:
             return Student.objects.none()
-        return Student.objects.filter(
+        student_ids = StudentClassMembership.objects.filter(
             class_section_id=session.class_section_id,
             academic_year_id=session.academic_year_id,
+        ).values_list("student_id", flat=True)
+        return Student.objects.filter(
+            pk__in=student_ids,
             is_active=True,
         ).order_by(*_STUDENT_ORDER)
 
@@ -63,8 +68,11 @@ def students_for_session(session):
     if kind == AudienceKind.SCHOOL:
         if not session.academic_year_id:
             return Student.objects.none()
-        return Student.objects.filter(
+        student_ids = StudentClassMembership.objects.filter(
             academic_year_id=session.academic_year_id,
+        ).values_list("student_id", flat=True)
+        return Student.objects.filter(
+            pk__in=student_ids,
             is_active=True,
         ).order_by(*_STUDENT_ORDER)
 
@@ -129,11 +137,22 @@ def roster_student_ids_by_session(sessions):
                 )
         by_key = defaultdict(set)
         if class_q:
-            for student_id, class_id, year_id in Student.objects.filter(
-                class_q,
-                is_active=True,
-            ).values_list("pk", "class_section_id", "academic_year_id"):
-                by_key[(class_id, year_id)].add(student_id)
+            memberships = list(
+                StudentClassMembership.objects.filter(class_q).values_list(
+                    "student_id",
+                    "class_section_id",
+                    "academic_year_id",
+                )
+            )
+            active_ids = set(
+                Student.objects.filter(
+                    pk__in={row[0] for row in memberships},
+                    is_active=True,
+                ).values_list("pk", flat=True)
+            )
+            for student_id, class_id, year_id in memberships:
+                if student_id in active_ids:
+                    by_key[(class_id, year_id)].add(student_id)
         for session in class_sessions:
             result[session.pk] = set(
                 by_key.get((session.class_section_id, session.academic_year_id), ())
@@ -184,11 +203,20 @@ def roster_student_ids_by_session(sessions):
         }
         by_year = defaultdict(set)
         if year_ids:
-            for student_id, year_id in Student.objects.filter(
-                academic_year_id__in=year_ids,
-                is_active=True,
-            ).values_list("pk", "academic_year_id"):
-                by_year[year_id].add(student_id)
+            memberships = list(
+                StudentClassMembership.objects.filter(
+                    academic_year_id__in=year_ids,
+                ).values_list("student_id", "academic_year_id")
+            )
+            active_ids = set(
+                Student.objects.filter(
+                    pk__in={row[0] for row in memberships},
+                    is_active=True,
+                ).values_list("pk", flat=True)
+            )
+            for student_id, year_id in memberships:
+                if student_id in active_ids:
+                    by_year[year_id].add(student_id)
         for session in school_sessions:
             result[session.pk] = set(by_year.get(session.academic_year_id, ()))
 
@@ -440,9 +468,12 @@ def build_class_attendance_report(class_section, academic_year, sessions):
     sessions = list(sessions)
     if not sessions:
         return _empty_attendance_report()
-    roster_students = Student.objects.filter(
+    member_ids = StudentClassMembership.objects.filter(
         class_section=class_section,
         academic_year=academic_year,
+    ).values_list("student_id", flat=True)
+    roster_students = Student.objects.filter(
+        pk__in=member_ids,
         is_active=True,
     ).order_by("roll_number", "last_name", "first_name", "admission_number")
     return _report_from_roster_and_sessions(roster_students, sessions)
