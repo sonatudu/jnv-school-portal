@@ -1,5 +1,5 @@
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
 
 from .models import (
     AcademicYear,
@@ -364,6 +364,26 @@ class SchoolCalendarDayAdmin(admin.ModelAdmin):
     autocomplete_fields = ("academic_year",)
     ordering = ("-date",)
     list_select_related = ("academic_year", "routine")
+    actions = ("generate_daily_sessions",)
+
+    @admin.action(description="Generate daily sessions")
+    def generate_daily_sessions(self, request, queryset):
+        from .generation import generate_sessions_for_calendar_days
+
+        days = queryset.select_related("academic_year", "routine")
+        results = generate_sessions_for_calendar_days(days)
+        created = sum(item.created for item in results)
+        existed = sum(item.already_existed for item in results)
+        skipped = sum(item.skipped for item in results)
+        warnings = [item.summary() for item in results]
+        level = messages.WARNING if any(item.errors or item.warnings for item in results) else messages.SUCCESS
+        self.message_user(
+            request,
+            " | ".join(warnings)
+            if warnings
+            else f"Created {created}, already existed {existed}, skipped {skipped}.",
+            level=level,
+        )
 
 
 @admin.register(ClassTimetableEntry)
