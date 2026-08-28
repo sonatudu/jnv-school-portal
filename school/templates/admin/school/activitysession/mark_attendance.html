@@ -1,0 +1,85 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  .attendance-header { margin-bottom: 1em; }
+  .attendance-meta { color: var(--body-quiet-color, #666); margin: 0.25em 0 1em; }
+  .attendance-actions { margin: 1em 0; display: flex; gap: 0.75em; flex-wrap: wrap; align-items: center; }
+  .attendance-table { width: 100%; border-collapse: collapse; }
+  .attendance-table th, .attendance-table td { padding: 6px 8px; vertical-align: top; }
+  .attendance-status { white-space: nowrap; }
+  .attendance-status label { margin-right: 0.6em; font-weight: normal; }
+  .attendance-notes { width: 12em; }
+  .attendance-audit { font-size: 0.9em; color: var(--body-quiet-color, #666); }
+  .attendance-errors { color: var(--error-fg, #ba2121); margin: 0.5em 0 1em; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="attendance-header">
+  <p class="attendance-meta">
+    {{ session.date }}
+    · {{ session.name }}
+    {% if session.routine_slot %}({{ session.routine_slot }}){% endif %}
+    · {{ session.activity_type }}
+    · {{ session.get_audience_kind_display }}
+    {% if session.class_section %}· {{ session.class_section }}{% endif %}
+    {% if session.house %}· {{ session.house }}{% endif %}
+    {% if session.student_group %}· {{ session.student_group }}{% endif %}
+    · Responsible: {{ session.responsible_staff }}
+  </p>
+  <p><strong>{{ marked_count }} / {{ roster_count }} marked</strong>
+    {% if orphan_rows %} · {{ orphan_rows|length }} previously marked, not on current roster{% endif %}
+  </p>
+</div>
+
+{% if errors %}
+  <ul class="attendance-errors">
+    {% for error in errors %}
+      <li>{{ error }}</li>
+    {% endfor %}
+  </ul>
+{% endif %}
+
+<form method="post" id="attendance-mark-form">
+  {% csrf_token %}
+  <div class="attendance-actions">
+    <button type="button" class="button" id="mark-all-present">Mark all Present</button>
+    <button type="submit" class="default" name="action" value="save">Save</button>
+    <button type="submit" class="button" name="action" value="save_unmarked_present">Save unmarked as Present</button>
+    <label>Correction reason (optional):
+      <input type="text" name="change_reason" value="{{ change_reason }}" maxlength="200" size="40">
+    </label>
+  </div>
+
+  {% include "admin/school/activitysession/_attendance_table.html" with rows=roster_rows heading="Roster" %}
+
+  {% if orphan_rows %}
+    <h2>Previously marked, not on current roster</h2>
+    {% include "admin/school/activitysession/_attendance_table.html" with rows=orphan_rows heading="" %}
+  {% endif %}
+
+  <div class="attendance-actions">
+    <button type="submit" class="default" name="action" value="save">Save</button>
+    <button type="submit" class="button" name="action" value="save_unmarked_present">Save unmarked as Present</button>
+    <a href="{% url 'admin:school_activitysession_changelist' %}" class="button cancel-link">Back to sessions</a>
+  </div>
+</form>
+
+<script>
+(function () {
+  var button = document.getElementById("mark-all-present");
+  if (!button) return;
+  button.addEventListener("click", function () {
+    document.querySelectorAll("tr.attendance-row[data-has-entry='0']").forEach(function (row) {
+      var checked = row.querySelector("input[type='radio']:checked");
+      if (checked) return;
+      var present = row.querySelector("input[type='radio'][value='present']");
+      if (present) present.checked = true;
+    });
+  });
+})();
+</script>
+{% endblock %}

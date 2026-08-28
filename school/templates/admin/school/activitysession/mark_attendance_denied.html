@@ -1,0 +1,7 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<p>{{ message }}</p>
+<p><a href="{% url 'admin:school_activitysession_changelist' %}">{% trans "Back to activity sessions" %}</a></p>
+{% endblock %}

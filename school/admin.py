@@ -1,6 +1,12 @@
 from django import forms
 from django.contrib import admin, messages
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import IntegrityError, transaction
+from django.http import Http404, HttpResponseRedirect
+from django.template.response import TemplateResponse
+from django.urls import path, reverse
+from django.utils import timezone
+from django.utils.html import format_html
 
 from .models import (
     AcademicYear,
@@ -28,6 +34,7 @@ from .models import (
     Subject,
     TeacherProfile,
     TeachingAssignment,
+    AttendanceStatus,
 )
 from accounts.models import UserCategory
 
@@ -213,17 +220,6 @@ class AttendanceRevisionInline(admin.TabularInline):
         return False
 
 
-class AttendanceEntryAdminForm(forms.ModelForm):
-    change_reason = forms.CharField(
-        required=False,
-        help_text="Optional reason stored on the revision if status changes.",
-    )
-
-    class Meta:
-        model = AttendanceEntry
-        fields = "__all__"
-
-
 @admin.register(ActivityType)
 class ActivityTypeAdmin(admin.ModelAdmin):
     list_display = (
@@ -357,7 +353,7 @@ class RoutineSlotAdmin(admin.ModelAdmin):
 @admin.register(SchoolCalendarDay)
 class SchoolCalendarDayAdmin(admin.ModelAdmin):
     form = SchoolCalendarDayForm
-    list_display = ("date", "academic_year", "routine", "note")
+    list_display = ("date", "academic_year", "routine", "note", "sessions_on_this_date")
     list_filter = ("academic_year", "routine")
     date_hierarchy = "date"
     list_editable = ("routine", "note")
@@ -366,6 +362,15 @@ class SchoolCalendarDayAdmin(admin.ModelAdmin):
     ordering = ("-date",)
     list_select_related = ("academic_year", "routine")
     actions = ("generate_daily_sessions",)
+
+    @admin.display(description="Sessions")
+    def sessions_on_this_date(self, obj):
+        url = reverse("admin:school_activitysession_changelist")
+        return format_html(
+            '<a href="{}?date__exact={}">Sessions on this date</a>',
+            url,
+            obj.date.isoformat(),
+        )
 
     @admin.action(description="Generate daily sessions")
     def generate_daily_sessions(self, request, queryset):
@@ -467,8 +472,10 @@ class ActivitySessionAdmin(admin.ModelAdmin):
         "responsible_staff",
         "start_time",
         "end_time",
+        "mark_attendance_link",
     )
     list_filter = ("academic_year", "activity_type", "audience_kind", "date")
+    date_hierarchy = "date"
     search_fields = (
         "name",
         "responsible_staff__username",
@@ -504,6 +511,329 @@ class ActivitySessionAdmin(admin.ModelAdmin):
     ordering = ("-date", "start_time")
     list_per_page = 50
 
+    def get_queryset(self, request):
+        from .attendance_auth import sessions_user_may_mark
+
+        qs = super().get_queryset(request)
+        if request.user.category == UserCategory.ADMINISTRATION:
+            return qs
+        return qs.filter(pk__in=sessions_user_may_mark(request.user))
+
+    def has_add_permission(self, request):
+        if request.user.category != UserCategory.ADMINISTRATION:
+            return False
+        return super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        if request.user.category != UserCategory.ADMINISTRATION:
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if request.user.category != UserCategory.ADMINISTRATION:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def changelist_view(self, request, extra_context=None):
+        self._request = request
+        return super().changelist_view(request, extra_context)
+
+    def get_urls(self):
+        extra = [
+            path(
+                "<int:object_id>/mark-attendance/",
+                self.admin_site.admin_view(self.mark_attendance_view),
+                name="school_activitysession_mark_attendance",
+            ),
+        ]
+        return extra + super().get_urls()
+
+    @admin.display(description="Attendance")
+    def mark_attendance_link(self, obj):
+        request = getattr(self, "_request", None)
+        if request is None:
+            return ""
+        if not obj.activity_type_id or not obj.activity_type.takes_attendance:
+            return ""
+        from .attendance_auth import can_take_attendance
+
+        if not can_take_attendance(request.user, obj):
+            return ""
+        url = reverse(
+            "admin:school_activitysession_mark_attendance",
+            args=[obj.pk],
+        )
+        return format_html('<a href="{}">Mark attendance</a>', url)
+
+    def _forbidden_attendance(self, request, message):
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Attendance cannot be marked",
+            "message": message,
+            "opts": self.model._meta,
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/activitysession/mark_attendance_denied.html",
+            context,
+            status=403,
+        )
+
+    def _audience_label(self, session):
+        if session.class_section_id:
+            return str(session.class_section)
+        if session.house_id:
+            return str(session.house)
+        if session.student_group_id:
+            return str(session.student_group)
+        if session.audience_kind == AudienceKind.SCHOOL:
+            return "Whole school"
+        if session.audience_kind == AudienceKind.SELECTED_STUDENTS:
+            return "Selected students"
+        return session.get_audience_kind_display()
+
+    def _attendance_row(self, request, student, entry, posted_status, posted_notes):
+        latest = None
+        entry_url = ""
+        if entry is not None:
+            revisions = list(entry.revisions.all())
+            latest = revisions[0] if revisions else None
+            entry_url = reverse(
+                "admin:school_attendanceentry_change",
+                args=[entry.pk],
+            )
+        if posted_status is None:
+            posted_status = entry.status if entry is not None else ""
+        if posted_notes is None:
+            posted_notes = entry.notes if entry is not None else ""
+        return {
+            "student": student,
+            "entry": entry,
+            "latest_revision": latest,
+            "entry_admin_url": entry_url,
+            "posted_status": posted_status,
+            "posted_notes": posted_notes,
+        }
+
+    def _mark_attendance_context(self, request, session, errors=None, posted=None):
+        from .attendance_roster import orphan_entries_for_session, students_for_session
+
+        roster = list(students_for_session(session))
+        roster_ids = [student.pk for student in roster]
+        entries = {
+            entry.student_id: entry
+            for entry in AttendanceEntry.objects.filter(activity_session=session)
+            .select_related("student", "taken_by", "updated_by")
+            .prefetch_related("revisions")
+        }
+        posted = posted or {}
+        roster_rows = []
+        for student in roster:
+            entry = entries.get(student.pk)
+            roster_rows.append(
+                self._attendance_row(
+                    request,
+                    student,
+                    entry,
+                    posted.get(f"status_{student.pk}"),
+                    posted.get(f"notes_{student.pk}"),
+                )
+            )
+        orphan_rows = []
+        for entry in orphan_entries_for_session(session, roster_ids):
+            entry = entries.get(entry.student_id, entry)
+            orphan_rows.append(
+                self._attendance_row(
+                    request,
+                    entry.student,
+                    entry,
+                    posted.get(f"status_{entry.student_id}"),
+                    posted.get(f"notes_{entry.student_id}"),
+                )
+            )
+        marked_on_roster = sum(1 for row in roster_rows if row["entry"] is not None)
+        title = (
+            f"Attendance: {session.name} — {self._audience_label(session)} — "
+            f"{marked_on_roster}/{len(roster)} marked"
+        )
+        return {
+            **self.admin_site.each_context(request),
+            "title": title,
+            "opts": self.model._meta,
+            "session": session,
+            "roster_rows": roster_rows,
+            "orphan_rows": orphan_rows,
+            "roster_count": len(roster),
+            "marked_count": marked_on_roster,
+            "status_choices": AttendanceStatus.choices,
+            "errors": errors or [],
+            "change_reason": posted.get("change_reason", ""),
+        }
+
+    def _apply_mark_attendance(self, request, session):
+        from .attendance_auth import can_change_attendance_status, can_take_attendance
+        from .attendance_roster import orphan_entries_for_session, students_for_session
+
+        action = request.POST.get("action", "save")
+        save_unmarked = action == "save_unmarked_present"
+        reason = (request.POST.get("change_reason") or "")[:200]
+        roster = list(students_for_session(session))
+        roster_ids = {student.pk for student in roster}
+        orphans = list(orphan_entries_for_session(session, roster_ids))
+        allowed_ids = roster_ids | {entry.student_id for entry in orphans}
+        entries = {
+            entry.student_id: entry
+            for entry in AttendanceEntry.objects.filter(activity_session=session)
+            .select_related("student")
+        }
+        valid_statuses = {choice[0] for choice in AttendanceStatus.choices}
+        errors = []
+        to_save = []
+
+        for student_id in allowed_ids:
+            posted_status = (request.POST.get(f"status_{student_id}") or "").strip()
+            posted_notes = (request.POST.get(f"notes_{student_id}") or "")[:200]
+            entry = entries.get(student_id)
+
+            if save_unmarked:
+                if entry is not None:
+                    continue
+                if not can_take_attendance(request.user, session):
+                    raise PermissionDenied
+                to_save.append(
+                    AttendanceEntry(
+                        activity_session=session,
+                        student_id=student_id,
+                        status=AttendanceStatus.PRESENT,
+                        notes=posted_notes,
+                        taken_by=request.user,
+                        taken_at=timezone.now(),
+                    )
+                )
+                continue
+
+            if entry is None:
+                if not posted_status:
+                    continue
+                if posted_status not in valid_statuses:
+                    errors.append(f"Invalid status for student {student_id}.")
+                    continue
+                if not can_take_attendance(request.user, session):
+                    raise PermissionDenied
+                to_save.append(
+                    AttendanceEntry(
+                        activity_session=session,
+                        student_id=student_id,
+                        status=posted_status,
+                        notes=posted_notes,
+                        taken_by=request.user,
+                        taken_at=timezone.now(),
+                    )
+                )
+                continue
+
+            if not posted_status:
+                errors.append(
+                    f"{entry.student}: an already saved attendance mark cannot be "
+                    "cleared here. Only Administration can delete an attendance entry."
+                )
+                continue
+            if posted_status not in valid_statuses:
+                errors.append(f"{entry.student}: invalid status.")
+                continue
+
+            stored_taken_by = entry.taken_by
+            stored_taken_at = entry.taken_at
+            if posted_status == entry.status:
+                if posted_notes != entry.notes:
+                    if not can_take_attendance(request.user, session):
+                        raise PermissionDenied
+                    entry.notes = posted_notes
+                    entry.taken_by = stored_taken_by
+                    entry.taken_at = stored_taken_at
+                    to_save.append(entry)
+                continue
+
+            if not can_change_attendance_status(request.user, session):
+                raise PermissionDenied
+            entry.status = posted_status
+            entry.notes = posted_notes
+            entry.taken_by = stored_taken_by
+            entry.taken_at = stored_taken_at
+            entry.updated_by = request.user
+            entry._status_change_reason = reason
+            to_save.append(entry)
+
+        if errors:
+            return errors
+
+        try:
+            with transaction.atomic():
+                for obj in to_save:
+                    obj.save()
+        except IntegrityError:
+            return [
+                "Another user saved attendance for this session at the same time. "
+                "Please review the current marks and try again."
+            ]
+        except ValidationError as exc:
+            if hasattr(exc, "message_dict"):
+                messages_out = []
+                for field, field_errors in exc.message_dict.items():
+                    for item in field_errors:
+                        messages_out.append(f"{field}: {item}")
+                return messages_out or [str(exc)]
+            if hasattr(exc, "messages"):
+                return list(exc.messages)
+            return [str(exc)]
+        return []
+
+    def mark_attendance_view(self, request, object_id):
+        from .attendance_auth import can_take_attendance
+
+        session = (
+            ActivitySession.objects.select_related(
+                "activity_type",
+                "class_section",
+                "house",
+                "student_group",
+                "responsible_staff",
+                "routine_slot",
+                "academic_year",
+            )
+            .filter(pk=object_id)
+            .first()
+        )
+        if session is None:
+            raise Http404("Activity session not found.")
+
+        if not session.activity_type_id or not session.activity_type.takes_attendance:
+            return self._forbidden_attendance(
+                request,
+                "This activity does not take attendance.",
+            )
+        if not can_take_attendance(request.user, session):
+            return self._forbidden_attendance(
+                request,
+                "You are not authorized to mark attendance for this session.",
+            )
+
+        errors = []
+        posted = None
+        if request.method == "POST":
+            errors = self._apply_mark_attendance(request, session)
+            if not errors:
+                self.message_user(request, "Attendance saved.", messages.SUCCESS)
+                return HttpResponseRedirect(request.path)
+            posted = request.POST
+
+        context = self._mark_attendance_context(request, session, errors=errors, posted=posted)
+        return TemplateResponse(
+            request,
+            "admin/school/activitysession/mark_attendance.html",
+            context,
+        )
+
 
 @admin.register(ActivitySessionParticipant)
 class ActivitySessionParticipantAdmin(admin.ModelAdmin):
@@ -534,7 +864,6 @@ class StaffDutyAssignmentAdmin(admin.ModelAdmin):
 
 
 class AttendanceEntryAdmin(admin.ModelAdmin):
-    form = AttendanceEntryAdminForm
     list_display = (
         "student",
         "activity_session",
@@ -551,7 +880,7 @@ class AttendanceEntryAdmin(admin.ModelAdmin):
         "student__last_name",
         "activity_session__name",
     )
-    autocomplete_fields = ("student", "taken_by", "updated_by")
+    autocomplete_fields = ("student", "activity_session", "taken_by", "updated_by")
     list_select_related = (
         "student",
         "activity_session__activity_type",
@@ -561,16 +890,16 @@ class AttendanceEntryAdmin(admin.ModelAdmin):
     )
     inlines = (AttendanceRevisionInline,)
     list_per_page = 50
-
-    def get_exclude(self, request, obj=None):
-        if obj is None:
-            return ("taken_by", "taken_at")
-        return ()
-
-    def get_readonly_fields(self, request, obj=None):
-        if obj:
-            return ("taken_by", "taken_at")
-        return ()
+    readonly_fields = (
+        "activity_session",
+        "student",
+        "status",
+        "taken_by",
+        "taken_at",
+        "updated_by",
+        "updated_at",
+        "notes",
+    )
 
     def get_queryset(self, request):
         from .attendance_auth import sessions_user_may_mark
@@ -578,21 +907,11 @@ class AttendanceEntryAdmin(admin.ModelAdmin):
         qs = super().get_queryset(request)
         return qs.filter(activity_session__in=sessions_user_may_mark(request.user))
 
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        from .attendance_auth import sessions_user_may_mark
-
-        if db_field.name == "activity_session":
-            kwargs["queryset"] = sessions_user_may_mark(request.user)
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+    def has_add_permission(self, request):
+        return False
 
     def has_change_permission(self, request, obj=None):
-        if not super().has_change_permission(request, obj):
-            return False
-        if obj is None:
-            return True
-        from .attendance_auth import can_change_attendance_status
-
-        return can_change_attendance_status(request.user, obj.activity_session)
+        return False
 
     def has_delete_permission(self, request, obj=None):
         if not super().has_delete_permission(request, obj):
@@ -604,27 +923,6 @@ class AttendanceEntryAdmin(admin.ModelAdmin):
         from .attendance_auth import can_change_attendance_status
 
         return can_change_attendance_status(request.user, obj.activity_session)
-
-    def save_model(self, request, obj, form, change):
-        from .attendance_auth import can_change_attendance_status, can_take_attendance
-
-        session = obj.activity_session
-        if not change:
-            if not can_take_attendance(request.user, session):
-                raise PermissionDenied
-            obj.taken_by = request.user
-        else:
-            stored = AttendanceEntry.objects.get(pk=obj.pk)
-            obj.taken_by = stored.taken_by
-            obj.taken_at = stored.taken_at
-            if stored.status != obj.status:
-                if not can_change_attendance_status(request.user, session):
-                    raise PermissionDenied
-                obj._status_change_reason = form.cleaned_data.get("change_reason", "")
-                obj.updated_by = request.user
-            elif not can_take_attendance(request.user, session):
-                raise PermissionDenied
-        super().save_model(request, obj, form, change)
 
 
 admin.site.register(AttendanceEntry, AttendanceEntryAdmin)

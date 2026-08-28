@@ -1,0 +1,57 @@
+{% load i18n %}
+<table class="attendance-table">
+  <thead>
+    <tr>
+      <th>Roll</th>
+      <th>Admission</th>
+      <th>Name</th>
+      <th>Status</th>
+      <th>Notes</th>
+      <th>Audit</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr class="attendance-row" data-has-entry="{% if row.entry %}1{% else %}0{% endif %}">
+      <td>{{ row.student.roll_number }}</td>
+      <td>{{ row.student.admission_number }}</td>
+      <td>{{ row.student.full_name }}</td>
+      <td class="attendance-status">
+        {% for value, label in status_choices %}
+          <label>
+            <input type="radio"
+                   name="status_{{ row.student.pk }}"
+                   value="{{ value }}"
+                   {% if row.posted_status == value %}checked{% endif %}>
+            {{ label }}
+          </label>
+        {% endfor %}
+      </td>
+      <td>
+        <input type="text" class="attendance-notes" name="notes_{{ row.student.pk }}"
+               value="{{ row.posted_notes }}" maxlength="200">
+      </td>
+      <td class="attendance-audit">
+        {% if row.entry %}
+          Taken by {{ row.entry.taken_by }} at {{ row.entry.taken_at }}
+          {% if row.entry.updated_by %}
+            <br>Updated by {{ row.entry.updated_by }} at {{ row.entry.updated_at }}
+          {% endif %}
+          {% if row.latest_revision %}
+            <br>{{ row.latest_revision.get_old_status_display }} → {{ row.latest_revision.get_new_status_display }}
+            {% if row.entry_admin_url %}
+              · <a href="{{ row.entry_admin_url }}">History</a>
+            {% endif %}
+          {% elif row.entry_admin_url %}
+            <br><a href="{{ row.entry_admin_url }}">History</a>
+          {% endif %}
+        {% else %}
+          Not marked yet
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6">No students on this list.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
