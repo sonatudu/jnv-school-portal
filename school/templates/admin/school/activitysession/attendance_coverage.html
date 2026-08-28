@@ -40,6 +40,12 @@
   <p>{{ notice }}</p>
 {% endif %}
 
+{% if correction_audit_url %}
+  <p>
+    <a href="{{ correction_audit_url }}">Correction audit</a>
+  </p>
+{% endif %}
+
 <div class="coverage-summary">
   <strong>All authorized sessions:</strong> {{ summary.total }}
   · Not started: {{ summary.not_started }}

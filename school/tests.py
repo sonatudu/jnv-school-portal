@@ -3579,3 +3579,486 @@ class AttendanceCoverageTests(TestCase):
         self.assertContains(school, f"date_from={self.day.isoformat()}")
 
 
+class AttendanceCorrectionAuditTests(TestCase):
+    def setUp(self):
+        self.year = AcademicYear.objects.create(
+            name="2026-27",
+            start_date=date(2026, 4, 1),
+            end_date=date(2027, 3, 31),
+            is_current=True,
+        )
+        self.other_year = AcademicYear.objects.create(
+            name="2025-26",
+            start_date=date(2025, 4, 1),
+            end_date=date(2026, 3, 31),
+        )
+        self.section = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="A",
+            display_name="VI-A",
+        )
+        self.other_section = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="B",
+            display_name="VI-B",
+        )
+        self.house = House.objects.create(name="Aravali", code="AR")
+        self.admin_user = User.objects.create_user(
+            username="aud-admin",
+            password="x",
+            category=UserCategory.ADMINISTRATION,
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.staff = User.objects.create_user(
+            username="aud-staff",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.other_staff = User.objects.create_user(
+            username="aud-other",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.lonely_staff = User.objects.create_user(
+            username="aud-lonely",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.hm = User.objects.create_user(
+            username="aud-hm",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.mod = User.objects.create_user(
+            username="aud-mod",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.parent = User.objects.create_user(
+            username="aud-parent",
+            password="x",
+            category=UserCategory.PARENT,
+            is_staff=True,
+        )
+        self.inactive = User.objects.create_user(
+            username="aud-inactive",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+            is_active=False,
+        )
+        self.period = ActivityType.objects.create(name="Period", takes_attendance=True)
+        self.student_a = Student.objects.create(
+            admission_number="AU1",
+            roll_number=1,
+            first_name="Ada",
+            last_name="A",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.section,
+            academic_year=self.year,
+        )
+        self.other_student = Student.objects.create(
+            admission_number="AU2",
+            roll_number=1,
+            first_name="Cara",
+            last_name="C",
+            date_of_birth=date(2014, 1, 3),
+            gender="female",
+            class_section=self.other_section,
+            academic_year=self.year,
+        )
+        StudentHouseMembership.objects.create(
+            student=self.student_a,
+            house=self.house,
+            academic_year=self.year,
+        )
+        HouseMasterAssignment.objects.create(
+            staff=self.hm,
+            house=self.house,
+            academic_year=self.year,
+        )
+        StaffDutyAssignment.objects.create(
+            duty_type=DutyType.objects.create(
+                name="MOD",
+                unique_per_day=True,
+                is_active=True,
+            ),
+            staff=self.mod,
+            date=date(2026, 8, 28),
+            academic_year=self.year,
+        )
+        self.day = date(2026, 8, 28)
+        self.later_day = date(2026, 8, 29)
+        self.class_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Period 3 VI-A",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.staff,
+        )
+        self.other_class_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Period 3 VI-B",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.other_section,
+            responsible_staff=self.other_staff,
+        )
+        self.house_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Aravali house roll",
+            start_time=time(7, 0),
+            end_time=time(7, 20),
+            audience_kind=AudienceKind.HOUSE,
+            house=self.house,
+            responsible_staff=self.other_staff,
+        )
+        self.old_session = ActivitySession.objects.create(
+            date=date(2025, 8, 28),
+            academic_year=self.other_year,
+            activity_type=self.period,
+            name="Old year period",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.staff,
+        )
+        self.staff_entry = AttendanceEntry.objects.create(
+            activity_session=self.class_session,
+            student=self.student_a,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.staff,
+        )
+        self._revise(
+            self.staff_entry,
+            AttendanceStatus.ABSENT,
+            self.staff,
+            "first correction",
+        )
+        self._revise(
+            self.staff_entry,
+            AttendanceStatus.LATE,
+            self.admin_user,
+            "",
+        )
+        self._revise(
+            self.staff_entry,
+            AttendanceStatus.PRESENT,
+            self.staff,
+            "back to present",
+        )
+        other_entry = AttendanceEntry.objects.create(
+            activity_session=self.other_class_session,
+            student=self.other_student,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.other_staff,
+        )
+        self._revise(other_entry, AttendanceStatus.LEAVE, self.other_staff, "other class")
+        house_entry = AttendanceEntry.objects.create(
+            activity_session=self.house_session,
+            student=self.student_a,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.other_staff,
+        )
+        self._revise(house_entry, AttendanceStatus.ABSENT, self.other_staff, "house fix")
+        old_entry = AttendanceEntry.objects.create(
+            activity_session=self.old_session,
+            student=self.student_a,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.staff,
+        )
+        self._revise(old_entry, AttendanceStatus.LEAVE, self.staff, "old year")
+        self.url = reverse(
+            "admin:school_activitysession_attendance_correction_audit"
+        )
+        self.range_query = {
+            "academic_year": self.year.pk,
+            "date_from": self.day.isoformat(),
+            "date_to": self.day.isoformat(),
+        }
+
+    def _revise(self, entry, new_status, changed_by, reason=""):
+        entry.status = new_status
+        entry.updated_by = changed_by
+        entry._status_change_reason = reason
+        entry.save()
+        return AttendanceRevision.objects.order_by("pk").last()
+
+    def test_administration_sees_authorized_revisions(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(self.url, self.range_query)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["result_count"], 5)
+        self.assertContains(response, "Period 3 VI-A")
+        self.assertContains(response, "Period 3 VI-B")
+        self.assertContains(response, "Aravali house roll")
+        self.assertContains(response, "Cara")
+        self.assertNotContains(response, "Old year period")
+
+    def test_staff_sees_only_authorized_revisions(self):
+        self.client.force_login(self.staff)
+        response = self.client.get(self.url, self.range_query)
+        self.assertEqual(response.context["result_count"], 3)
+        self.assertContains(response, "Period 3 VI-A")
+        self.assertContains(response, "Ada")
+        self.assertNotContains(response, "Period 3 VI-B")
+        self.assertNotContains(response, "Cara")
+        self.assertNotContains(response, "AU2")
+        self.assertNotContains(response, "Aravali house roll")
+
+    def test_unique_mod_and_house_master(self):
+        self.client.force_login(self.mod)
+        response = self.client.get(self.url, self.range_query)
+        self.assertContains(response, "Period 3 VI-B")
+        self.assertContains(response, "Cara")
+        self.client.force_login(self.hm)
+        response = self.client.get(self.url, self.range_query)
+        self.assertContains(response, "Aravali house roll")
+        self.assertNotContains(response, "Period 3 VI-B")
+        self.assertNotContains(response, "Cara")
+
+    def test_lonely_staff_parent_inactive(self):
+        self.client.force_login(self.lonely_staff)
+        response = self.client.get(self.url, self.range_query)
+        self.assertContains(response, "No attendance corrections found in this range.")
+        self.assertEqual(response.context["result_count"], 0)
+        self.assertNotContains(response, "Ada")
+        self.assertNotContains(response, "Cara")
+        self.assertNotContains(response, "AU1")
+        self.client.force_login(self.parent)
+        self.assertEqual(self.client.get(self.url, self.range_query).status_code, 403)
+        self.client.force_login(self.inactive)
+        self.assertIn(
+            self.client.get(self.url, self.range_query).status_code,
+            (302, 403),
+        )
+
+    def test_year_and_date_filters(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.context["selected_year"], self.year)
+        self.assertEqual(response.context["date_from"], self.year.start_date)
+        self.year.is_current = False
+        self.year.save()
+        response = self.client.get(self.url)
+        self.assertEqual(response.context["selected_year"], self.year)
+        other = self.client.get(
+            self.url,
+            {
+                "academic_year": self.other_year.pk,
+                "date_from": self.other_year.start_date.isoformat(),
+                "date_to": self.other_year.end_date.isoformat(),
+            },
+        )
+        self.assertContains(other, "Old year period")
+        self.assertContains(other, "old year")
+        self.assertNotContains(other, "Period 3 VI-A")
+        invalid_year = self.client.get(self.url, {"academic_year": "abc"})
+        self.assertContains(invalid_year, "Enter a valid academic year.")
+        self.assertEqual(invalid_year.context["rows"], [])
+        invalid_date = self.client.get(
+            self.url,
+            {
+                "academic_year": self.year.pk,
+                "date_from": "bad",
+                "date_to": self.day.isoformat(),
+            },
+        )
+        self.assertContains(invalid_date, "Enter a valid date.")
+        self.assertEqual(invalid_date.context["rows"], [])
+        inverted = self.client.get(
+            self.url,
+            {
+                "academic_year": self.year.pk,
+                "date_from": self.later_day.isoformat(),
+                "date_to": self.day.isoformat(),
+            },
+        )
+        self.assertContains(inverted, "start date must be on or before")
+        self.assertEqual(inverted.context["rows"], [])
+
+    def test_session_changed_by_student_status_filters(self):
+        self.client.force_login(self.admin_user)
+        by_session = self.client.get(
+            self.url,
+            {**self.range_query, "session": self.other_class_session.pk},
+        )
+        self.assertEqual(by_session.context["result_count"], 1)
+        self.assertContains(by_session, "Cara")
+        self.assertEqual(
+            [row["session"].name for row in by_session.context["rows"]],
+            ["Period 3 VI-B"],
+        )
+        by_changer = self.client.get(
+            self.url,
+            {**self.range_query, "changed_by": self.admin_user.pk},
+        )
+        self.assertEqual(by_changer.context["result_count"], 1)
+        self.assertContains(by_changer, "aud-admin")
+        by_student = self.client.get(
+            self.url,
+            {**self.range_query, "student": self.other_student.pk},
+        )
+        self.assertEqual(by_student.context["result_count"], 1)
+        self.assertContains(by_student, "AU2")
+        by_status = self.client.get(
+            self.url,
+            {**self.range_query, "status": AttendanceStatus.LEAVE},
+        )
+        self.assertEqual(by_status.context["result_count"], 1)
+        self.assertContains(by_status, "Leave")
+        combined = self.client.get(
+            self.url,
+            {
+                **self.range_query,
+                "session": self.class_session.pk,
+                "student": self.student_a.pk,
+                "changed_by": self.staff.pk,
+                "status": AttendanceStatus.PRESENT,
+            },
+        )
+        self.assertEqual(combined.context["result_count"], 1)
+        self.assertContains(combined, "back to present")
+
+    def test_staff_cannot_discover_unauthorized_students_via_filter(self):
+        self.client.force_login(self.staff)
+        response = self.client.get(
+            self.url,
+            {**self.range_query, "student": self.other_student.pk},
+        )
+        self.assertEqual(response.context["result_count"], 0)
+        self.assertNotContains(response, "Cara")
+        self.assertNotContains(response, "AU2")
+        option_ids = [student.pk for student in response.context["student_options"]]
+        self.assertNotIn(self.other_student.pk, option_ids)
+        session_ids = [session.pk for session in response.context["session_options"]]
+        self.assertNotIn(self.other_class_session.pk, session_ids)
+
+    def test_complete_revision_history_order_and_reason(self):
+        self.client.force_login(self.staff)
+        response = self.client.get(
+            self.url,
+            {**self.range_query, "session": self.class_session.pk},
+        )
+        rows = response.context["rows"]
+        self.assertEqual(len(rows), 3)
+        statuses = [
+            (row["revision"].old_status, row["revision"].new_status)
+            for row in rows
+        ]
+        self.assertEqual(
+            statuses,
+            [
+                (AttendanceStatus.LATE, AttendanceStatus.PRESENT),
+                (AttendanceStatus.ABSENT, AttendanceStatus.LATE),
+                (AttendanceStatus.PRESENT, AttendanceStatus.ABSENT),
+            ],
+        )
+        self.assertEqual(rows[0]["revision"].reason, "back to present")
+        self.assertEqual(rows[1]["revision"].reason, "")
+        self.assertContains(response, "—")
+        self.assertContains(response, "first correction")
+        self.assertContains(response, "aud-staff")
+        self.assertContains(response, "aud-admin")
+
+    def test_get_and_post_do_not_write(self):
+        self.client.force_login(self.admin_user)
+        before = (
+            ActivitySession.objects.count(),
+            AttendanceEntry.objects.count(),
+            AttendanceRevision.objects.count(),
+            SchoolCalendarDay.objects.count(),
+        )
+        self.assertEqual(self.client.get(self.url, self.range_query).status_code, 200)
+        self.assertEqual(self.client.post(self.url, self.range_query).status_code, 405)
+        self.assertEqual(
+            (
+                ActivitySession.objects.count(),
+                AttendanceEntry.objects.count(),
+                AttendanceRevision.objects.count(),
+                SchoolCalendarDay.objects.count(),
+            ),
+            before,
+        )
+
+    def test_pagination_preserves_filters(self):
+        entry = self.staff_entry
+        for index in range(48):
+            new_status = (
+                AttendanceStatus.ABSENT
+                if entry.status == AttendanceStatus.PRESENT
+                else AttendanceStatus.PRESENT
+            )
+            self._revise(entry, new_status, self.staff, f"page-{index}")
+        self.client.force_login(self.staff)
+        query = {**self.range_query, "session": self.class_session.pk}
+        page1 = self.client.get(self.url, query)
+        self.assertEqual(page1.context["result_count"], 51)
+        self.assertEqual(len(page1.context["rows"]), 50)
+        self.assertContains(page1, "page=2")
+        self.assertContains(page1, f"academic_year={self.year.pk}")
+        page2 = self.client.get(self.url, {**query, "page": 2})
+        self.assertEqual(len(page2.context["rows"]), 1)
+        self.assertEqual(page2.context["page_obj"].number, 2)
+
+    def test_entry_point_links(self):
+        self.client.force_login(self.admin_user)
+        changelist = self.client.get(
+            reverse("admin:school_activitysession_changelist")
+        )
+        self.assertContains(changelist, "Correction audit")
+        self.assertContains(changelist, self.url)
+        coverage = self.client.get(
+            reverse("admin:school_activitysession_attendance_coverage"),
+            self.range_query,
+        )
+        self.assertContains(coverage, "Correction audit")
+        self.assertContains(coverage, f"{self.url}?academic_year={self.year.pk}")
+        school = self.client.get(
+            reverse("admin:school_activitysession_school_attendance_report"),
+            self.range_query,
+        )
+        self.assertContains(school, "Correction audit")
+        self.assertContains(school, f"date_from={self.day.isoformat()}")
+        SchoolCalendarDay.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            routine=Routine.objects.create(
+                academic_year=self.year,
+                name="Regular",
+                is_active=True,
+            ),
+        )
+        overview = self.client.get(
+            reverse("admin:school_activitysession_attendance_overview"),
+            {"date": self.day.isoformat()},
+        )
+        self.assertContains(overview, "Correction audit")
+        self.assertContains(overview, f"date_from={self.day.isoformat()}")
+        history = self.client.get(
+            reverse(
+                "admin:school_student_attendance_history",
+                args=[self.student_a.pk],
+            )
+        )
+        self.assertContains(history, "Correction audit")
+        self.assertContains(history, f"student={self.student_a.pk}")
+
+

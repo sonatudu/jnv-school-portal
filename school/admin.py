@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponseNotAllowed, HttpResponseRedirect
 from django.template.response import TemplateResponse
@@ -367,9 +368,20 @@ class StudentAdmin(admin.ModelAdmin):
                     "admin:school_activitysession_mark_attendance",
                     args=[row["session"].pk],
                 )
-                row["entry_url"] = reverse(
-                    "admin:school_attendanceentry_change",
-                    args=[row["entry"].pk],
+                audit_params = {
+                    "student": student.pk,
+                    "session": row["session"].pk,
+                }
+                if selected_year:
+                    audit_params["academic_year"] = selected_year.pk
+                if date_from:
+                    audit_params["date_from"] = date_from.isoformat()
+                if date_to:
+                    audit_params["date_to"] = date_to.isoformat()
+                row["correction_audit_url"] = (
+                    reverse("admin:school_activitysession_attendance_correction_audit")
+                    + "?"
+                    + urlencode(audit_params)
                 )
             for row in history["unmarked_rows"]:
                 row["mark_url"] = reverse(
@@ -393,6 +405,22 @@ class StudentAdmin(admin.ModelAdmin):
             "notice": notice,
             "history": history,
             "percentage_display": percentage_display,
+            "correction_audit_url": (
+                reverse("admin:school_activitysession_attendance_correction_audit")
+                + "?"
+                + urlencode(
+                    {
+                        key: value
+                        for key, value in {
+                            "academic_year": selected_year.pk if selected_year else "",
+                            "date_from": date_from.isoformat() if date_from else "",
+                            "date_to": date_to.isoformat() if date_to else "",
+                            "student": student.pk,
+                        }.items()
+                        if value != ""
+                    }
+                )
+            ),
         }
         return TemplateResponse(
             request,
@@ -1031,6 +1059,9 @@ class ActivitySessionAdmin(admin.ModelAdmin):
         extra_context["attendance_coverage_url"] = reverse(
             "admin:school_activitysession_attendance_coverage"
         )
+        extra_context["correction_audit_url"] = reverse(
+            "admin:school_activitysession_attendance_correction_audit"
+        )
         return super().changelist_view(request, extra_context)
 
     def get_urls(self):
@@ -1054,6 +1085,11 @@ class ActivitySessionAdmin(admin.ModelAdmin):
                 "attendance-coverage/",
                 self.admin_site.admin_view(self.attendance_coverage_view),
                 name="school_activitysession_attendance_coverage",
+            ),
+            path(
+                "attendance-correction-audit/",
+                self.admin_site.admin_view(self.attendance_correction_audit_view),
+                name="school_activitysession_attendance_correction_audit",
             ),
             path(
                 "<int:object_id>/mark-attendance/",
@@ -1185,6 +1221,10 @@ class ActivitySessionAdmin(admin.ModelAdmin):
                 calendar_day,
             ),
             "attendance_coverage_url": self._coverage_url_for_overview(
+                selected_date,
+                calendar_day,
+            ),
+            "correction_audit_url": self._audit_url_for_overview(
                 selected_date,
                 calendar_day,
             ),
@@ -1366,6 +1406,248 @@ class ActivitySessionAdmin(admin.ModelAdmin):
             + urlencode(params)
         )
 
+    def _audit_url_for_overview(self, selected_date, calendar_day):
+        if selected_date is None:
+            return ""
+        params = {
+            "date_from": selected_date.isoformat(),
+            "date_to": selected_date.isoformat(),
+        }
+        if calendar_day is not None:
+            params["academic_year"] = calendar_day.academic_year_id
+        return (
+            reverse("admin:school_activitysession_attendance_correction_audit")
+            + "?"
+            + urlencode(params)
+        )
+
+    def attendance_correction_audit_view(self, request):
+        from django.contrib.auth import get_user_model
+
+        from .attendance_auth import sessions_user_may_mark
+
+        if request.method != "GET":
+            return HttpResponseNotAllowed(["GET"])
+
+        user = request.user
+        if (
+            not user.is_authenticated
+            or not user.is_active
+            or user.category == UserCategory.PARENT
+        ):
+            return self._forbidden_attendance(
+                request,
+                "You are not authorized to view the attendance correction audit.",
+            )
+
+        years = list(AcademicYear.objects.order_by("-start_date"))
+        notice = ""
+        selected_year = AcademicYear.objects.filter(is_current=True).first()
+        if selected_year is None:
+            selected_year = years[0] if years else None
+
+        raw_year = request.GET.get("academic_year")
+        if raw_year:
+            try:
+                selected_year = AcademicYear.objects.get(pk=int(raw_year))
+            except (AcademicYear.DoesNotExist, TypeError, ValueError):
+                notice = "Enter a valid academic year."
+                selected_year = None
+
+        date_from = selected_year.start_date if selected_year else None
+        date_to = selected_year.end_date if selected_year else None
+        raw_from = request.GET.get("date_from")
+        raw_to = request.GET.get("date_to")
+        if raw_from:
+            try:
+                date_from = date.fromisoformat(raw_from)
+            except ValueError:
+                notice = "Enter a valid date."
+                date_from = None
+        if raw_to:
+            try:
+                date_to = date.fromisoformat(raw_to)
+            except ValueError:
+                notice = "Enter a valid date."
+                date_to = None
+        if date_from and date_to and date_from > date_to:
+            notice = "The start date must be on or before the end date."
+            date_from = None
+            date_to = None
+
+        valid_statuses = {choice[0] for choice in AttendanceStatus.choices}
+        selected_session_id = None
+        selected_changed_by_id = None
+        selected_student_id = None
+        selected_status = (request.GET.get("status") or "").strip()
+        status_invalid = bool(selected_status and selected_status not in valid_statuses)
+        if status_invalid:
+            selected_status = ""
+
+        raw_session = request.GET.get("session")
+        if raw_session:
+            try:
+                selected_session_id = int(raw_session)
+            except (TypeError, ValueError):
+                selected_session_id = False
+        raw_changed_by = request.GET.get("changed_by")
+        if raw_changed_by:
+            try:
+                selected_changed_by_id = int(raw_changed_by)
+            except (TypeError, ValueError):
+                selected_changed_by_id = False
+        raw_student = request.GET.get("student")
+        if raw_student:
+            try:
+                selected_student_id = int(raw_student)
+            except (TypeError, ValueError):
+                selected_student_id = False
+
+        session_options = []
+        changed_by_options = []
+        student_options = []
+        page_obj = None
+        result_count = 0
+        rows = []
+        if selected_year and date_from and date_to:
+            authorized_sessions = sessions_user_may_mark(user).filter(
+                academic_year=selected_year,
+                date__gte=date_from,
+                date__lte=date_to,
+            )
+            revisions = AttendanceRevision.objects.filter(
+                entry__activity_session__in=authorized_sessions,
+            )
+            session_options = list(
+                authorized_sessions.filter(
+                    pk__in=revisions.values("entry__activity_session_id"),
+                )
+                .select_related("activity_type", "class_section", "house", "student_group")
+                .order_by("date", "start_time", "name")
+            )
+            student_options = list(
+                Student.objects.filter(
+                    pk__in=revisions.values("entry__student_id"),
+                ).order_by("last_name", "first_name", "admission_number")
+            )
+            User = get_user_model()
+            changed_by_options = list(
+                User.objects.filter(
+                    pk__in=revisions.values("changed_by_id"),
+                ).order_by("username")
+            )
+
+            if (
+                selected_session_id is False
+                or selected_changed_by_id is False
+                or selected_student_id is False
+                or status_invalid
+            ):
+                revisions = revisions.none()
+            else:
+                if selected_session_id is not None:
+                    if authorized_sessions.filter(pk=selected_session_id).exists():
+                        revisions = revisions.filter(
+                            entry__activity_session_id=selected_session_id
+                        )
+                    else:
+                        revisions = revisions.none()
+                if selected_changed_by_id is not None:
+                    allowed_changers = {option.pk for option in changed_by_options}
+                    if selected_changed_by_id in allowed_changers:
+                        revisions = revisions.filter(
+                            changed_by_id=selected_changed_by_id
+                        )
+                    else:
+                        revisions = revisions.none()
+                if selected_student_id is not None:
+                    allowed_students = {option.pk for option in student_options}
+                    if selected_student_id in allowed_students:
+                        revisions = revisions.filter(
+                            entry__student_id=selected_student_id
+                        )
+                    else:
+                        revisions = revisions.none()
+                if selected_status:
+                    revisions = revisions.filter(new_status=selected_status)
+
+            revisions = (
+                revisions.select_related(
+                    "entry__activity_session__activity_type",
+                    "entry__activity_session__class_section",
+                    "entry__activity_session__house",
+                    "entry__activity_session__student_group",
+                    "entry__student",
+                    "changed_by",
+                )
+                .order_by("-changed_at", "-pk")
+            )
+            paginator = Paginator(revisions, 50)
+            raw_page = request.GET.get("page") or 1
+            try:
+                page_obj = paginator.page(raw_page)
+            except PageNotAnInteger:
+                page_obj = paginator.page(1)
+            except EmptyPage:
+                page_obj = paginator.page(paginator.num_pages)
+            result_count = paginator.count
+            for revision in page_obj.object_list:
+                session = revision.entry.activity_session
+                rows.append(
+                    {
+                        "revision": revision,
+                        "session": session,
+                        "target": self._overview_target_label(session),
+                    }
+                )
+            if result_count == 0 and not notice:
+                notice = "No attendance corrections found in this range."
+
+        query_params = {}
+        if selected_year:
+            query_params["academic_year"] = selected_year.pk
+        if date_from:
+            query_params["date_from"] = date_from.isoformat()
+        if date_to:
+            query_params["date_to"] = date_to.isoformat()
+        if selected_session_id not in (None, False):
+            query_params["session"] = selected_session_id
+        if selected_changed_by_id not in (None, False):
+            query_params["changed_by"] = selected_changed_by_id
+        if selected_student_id not in (None, False):
+            query_params["student"] = selected_student_id
+        if selected_status:
+            query_params["status"] = selected_status
+        filter_query = urlencode(query_params)
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Attendance correction audit",
+            "opts": self.model._meta,
+            "years": years,
+            "selected_year": selected_year,
+            "date_from": date_from,
+            "date_to": date_to,
+            "notice": notice,
+            "rows": rows,
+            "page_obj": page_obj,
+            "result_count": result_count,
+            "filter_query": filter_query,
+            "session_options": session_options,
+            "changed_by_options": changed_by_options,
+            "student_options": student_options,
+            "selected_session_id": selected_session_id if selected_session_id not in (None, False) else "",
+            "selected_changed_by_id": selected_changed_by_id if selected_changed_by_id not in (None, False) else "",
+            "selected_student_id": selected_student_id if selected_student_id not in (None, False) else "",
+            "selected_status": selected_status or "",
+            "status_choices": AttendanceStatus.choices,
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/activitysession/attendance_correction_audit.html",
+            context,
+        )
+
     def attendance_coverage_view(self, request):
         from .attendance_auth import sessions_user_may_mark
         from .attendance_roster import overview_rows_for_sessions
@@ -1499,6 +1781,14 @@ class ActivitySessionAdmin(admin.ModelAdmin):
             "summary": summary,
             "selected_statuses": selected_statuses,
             "status_choices": status_choices,
+            "correction_audit_url": (
+                reverse("admin:school_activitysession_attendance_correction_audit")
+                + (
+                    f"?{self._school_report_query(selected_year, date_from, date_to)}"
+                    if selected_year and date_from and date_to
+                    else ""
+                )
+            ),
         }
         return TemplateResponse(
             request,
@@ -1619,6 +1909,10 @@ class ActivitySessionAdmin(admin.ModelAdmin):
                 reverse("admin:school_activitysession_attendance_coverage")
                 + (f"?{query}" if query else "")
             ),
+            "correction_audit_url": (
+                reverse("admin:school_activitysession_attendance_correction_audit")
+                + (f"?{query}" if query else "")
+            ),
         }
         return TemplateResponse(
             request,
@@ -1639,16 +1933,26 @@ class ActivitySessionAdmin(admin.ModelAdmin):
             return "Selected students"
         return session.get_audience_kind_display()
 
-    def _attendance_row(self, request, student, entry, posted_status, posted_notes):
+    def _attendance_row(self, request, student, entry, posted_status, posted_notes, session=None):
         latest = None
-        entry_url = ""
+        audit_url = ""
         if entry is not None:
             revisions = list(entry.revisions.all())
             latest = revisions[0] if revisions else None
-            entry_url = reverse(
-                "admin:school_attendanceentry_change",
-                args=[entry.pk],
-            )
+            if session is not None:
+                audit_url = (
+                    reverse("admin:school_activitysession_attendance_correction_audit")
+                    + "?"
+                    + urlencode(
+                        {
+                            "academic_year": session.academic_year_id,
+                            "date_from": session.date.isoformat(),
+                            "date_to": session.date.isoformat(),
+                            "session": session.pk,
+                            "student": student.pk,
+                        }
+                    )
+                )
         if posted_status is None:
             posted_status = entry.status if entry is not None else ""
         if posted_notes is None:
@@ -1657,7 +1961,7 @@ class ActivitySessionAdmin(admin.ModelAdmin):
             "student": student,
             "entry": entry,
             "latest_revision": latest,
-            "entry_admin_url": entry_url,
+            "correction_audit_url": audit_url,
             "posted_status": posted_status,
             "posted_notes": posted_notes,
         }
@@ -1684,6 +1988,7 @@ class ActivitySessionAdmin(admin.ModelAdmin):
                     entry,
                     posted.get(f"status_{student.pk}"),
                     posted.get(f"notes_{student.pk}"),
+                    session=session,
                 )
             )
         orphan_rows = []
@@ -1696,6 +2001,7 @@ class ActivitySessionAdmin(admin.ModelAdmin):
                     entry,
                     posted.get(f"status_{entry.student_id}"),
                     posted.get(f"notes_{entry.student_id}"),
+                    session=session,
                 )
             )
         marked_on_roster = sum(1 for row in roster_rows if row["entry"] is not None)
