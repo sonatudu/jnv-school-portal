@@ -208,6 +208,21 @@ class ActivitySessionParticipantInline(admin.TabularInline):
     extra = 1
     autocomplete_fields = ("student",)
 
+    def has_add_permission(self, request, obj=None):
+        if request.user.category != UserCategory.ADMINISTRATION:
+            return False
+        return super().has_add_permission(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        if request.user.category != UserCategory.ADMINISTRATION:
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if request.user.category != UserCategory.ADMINISTRATION:
+            return False
+        return super().has_delete_permission(request, obj)
+
 
 class AttendanceRevisionInline(admin.TabularInline):
     model = AttendanceRevision
@@ -847,6 +862,21 @@ class ActivitySessionParticipantAdmin(admin.ModelAdmin):
     autocomplete_fields = ("session", "student")
     list_select_related = ("session", "student")
 
+    def has_add_permission(self, request):
+        if request.user.category != UserCategory.ADMINISTRATION:
+            return False
+        return super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        if request.user.category != UserCategory.ADMINISTRATION:
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if request.user.category != UserCategory.ADMINISTRATION:
+            return False
+        return super().has_delete_permission(request, obj)
+
 
 @admin.register(StaffDutyAssignment)
 class StaffDutyAssignmentAdmin(admin.ModelAdmin):
@@ -940,7 +970,7 @@ class AttendanceRevisionAdmin(admin.ModelAdmin):
     )
     autocomplete_fields = ("entry", "changed_by")
     list_select_related = ("entry", "changed_by", "entry__student")
-    readonly_fields = ("entry", "old_status", "new_status", "changed_by", "changed_at")
+    readonly_fields = ("entry", "old_status", "new_status", "changed_by", "changed_at", "reason")
     ordering = ("-changed_at",)
 
     def get_queryset(self, request):
@@ -953,4 +983,7 @@ class AttendanceRevisionAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False

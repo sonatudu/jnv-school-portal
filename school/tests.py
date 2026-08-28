@@ -1,7 +1,8 @@
 from datetime import date, time
 
+from django.contrib.admin.sites import site
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import RequestFactory, TestCase
 from django.urls import reverse
 
 from accounts.models import UserCategory
@@ -17,7 +18,10 @@ from .models import (
     AttendanceStatus,
     AudienceKind,
     ClassSection,
+    DutyType,
     House,
+    HouseMasterAssignment,
+    StaffDutyAssignment,
     Student,
     StudentGroup,
     StudentGroupMembership,
@@ -130,6 +134,15 @@ class AttendanceRosterTests(TestCase):
             audience_kind=AudienceKind.STUDENT_GROUP,
             class_section=None,
             student_group=group,
+        )
+        ActivitySessionParticipant.objects.create(session=session, student=self.student_b)
+        roster = list(students_for_session(session))
+        self.assertEqual(roster, [self.student_b])
+
+    def test_selected_students_roster_uses_participants(self):
+        session = self._session(
+            audience_kind=AudienceKind.SELECTED_STUDENTS,
+            class_section=None,
         )
         ActivitySessionParticipant.objects.create(session=session, student=self.student_b)
         roster = list(students_for_session(session))
@@ -316,6 +329,18 @@ class MarkAttendanceAdminTests(TestCase):
             status_code=403,
         )
 
+    def test_unrelated_staff_post_to_guessed_url_gets_403(self):
+        self.client.force_login(self.other)
+        response = self.client.post(
+            self.url,
+            {
+                "action": "save",
+                f"status_{self.student_a.pk}": AttendanceStatus.PRESENT,
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(AttendanceEntry.objects.count(), 0)
+
     def test_non_attendance_activity_gets_403(self):
         self.session.activity_type = self.no_att
         self.session.save()
@@ -327,3 +352,276 @@ class MarkAttendanceAdminTests(TestCase):
             "This activity does not take attendance.",
             status_code=403,
         )
+
+
+class AttendanceAuthorizationAdminTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.year = AcademicYear.objects.create(
+            name="2026-27",
+            start_date=date(2026, 4, 1),
+            end_date=date(2027, 3, 31),
+            is_current=True,
+        )
+        self.section = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="A",
+            display_name="VI-A",
+        )
+        self.house = House.objects.create(name="Aravali", code="AR")
+        self.responsible = User.objects.create_user(
+            username="responsible",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.hm = User.objects.create_user(
+            username="housemaster",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.mod = User.objects.create_user(
+            username="mod",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.ordinary = User.objects.create_user(
+            username="ordinary",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.admin_user = User.objects.create_user(
+            username="adminuser",
+            password="x",
+            category=UserCategory.ADMINISTRATION,
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.parent = User.objects.create_user(
+            username="parentuser",
+            password="x",
+            category=UserCategory.PARENT,
+            is_staff=True,
+        )
+        self.activity = ActivityType.objects.create(
+            name="Period",
+            takes_attendance=True,
+        )
+        self.student = Student.objects.create(
+            admission_number="A1",
+            roll_number=1,
+            first_name="Ada",
+            last_name="A",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.section,
+            academic_year=self.year,
+        )
+        self.class_session = ActivitySession.objects.create(
+            date=date(2026, 8, 28),
+            academic_year=self.year,
+            activity_type=self.activity,
+            name="Period 3",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.responsible,
+        )
+        self.house_session = ActivitySession.objects.create(
+            date=date(2026, 8, 28),
+            academic_year=self.year,
+            activity_type=self.activity,
+            name="House roll",
+            start_time=time(10, 0),
+            end_time=time(10, 30),
+            audience_kind=AudienceKind.HOUSE,
+            house=self.house,
+            responsible_staff=self.responsible,
+        )
+        HouseMasterAssignment.objects.create(
+            staff=self.hm,
+            house=self.house,
+            academic_year=self.year,
+        )
+        self.duty = DutyType.objects.create(
+            name="MOD",
+            unique_per_day=True,
+            is_active=True,
+        )
+        StaffDutyAssignment.objects.create(
+            duty_type=self.duty,
+            staff=self.mod,
+            date=self.class_session.date,
+            academic_year=self.year,
+        )
+        StudentHouseMembership.objects.create(
+            student=self.student,
+            house=self.house,
+            academic_year=self.year,
+        )
+
+    def _mark_url(self, session):
+        return reverse(
+            "admin:school_activitysession_mark_attendance",
+            args=[session.pk],
+        )
+
+    def _admin_request(self, user):
+        request = self.factory.get("/")
+        request.user = user
+        return request
+
+    def test_house_master_can_mark_house_session(self):
+        self.client.force_login(self.hm)
+        url = self._mark_url(self.house_session)
+        self.assertEqual(self.client.get(url).status_code, 200)
+        response = self.client.post(
+            url,
+            {
+                "action": "save",
+                f"status_{self.student.pk}": AttendanceStatus.PRESENT,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        entry = AttendanceEntry.objects.get()
+        self.assertEqual(entry.taken_by, self.hm)
+        self.assertEqual(entry.activity_session, self.house_session)
+
+    def test_unique_mod_can_mark_session_on_that_date(self):
+        self.client.force_login(self.mod)
+        url = self._mark_url(self.class_session)
+        self.assertEqual(self.client.get(url).status_code, 200)
+        response = self.client.post(
+            url,
+            {
+                "action": "save",
+                f"status_{self.student.pk}": AttendanceStatus.ABSENT,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(AttendanceEntry.objects.get().taken_by, self.mod)
+
+    def test_administration_can_mark_any_attendance_capable_session(self):
+        self.client.force_login(self.admin_user)
+        url = self._mark_url(self.class_session)
+        self.assertEqual(self.client.get(url).status_code, 200)
+        response = self.client.post(
+            url,
+            {
+                "action": "save",
+                f"status_{self.student.pk}": AttendanceStatus.LATE,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(AttendanceEntry.objects.get().taken_by, self.admin_user)
+
+    def test_ordinary_staff_cannot_mark(self):
+        self.client.force_login(self.ordinary)
+        url = self._mark_url(self.class_session)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+        response = self.client.post(
+            url,
+            {
+                "action": "save",
+                f"status_{self.student.pk}": AttendanceStatus.PRESENT,
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(AttendanceEntry.objects.count(), 0)
+
+    def test_parent_cannot_mark(self):
+        self.client.force_login(self.parent)
+        url = self._mark_url(self.class_session)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(AttendanceEntry.objects.count(), 0)
+
+    def test_staff_cannot_change_activity_session_in_admin(self):
+        session_admin = site._registry[ActivitySession]
+        request = self._admin_request(self.ordinary)
+        self.assertFalse(session_admin.has_change_permission(request))
+        self.assertFalse(session_admin.has_change_permission(request, self.class_session))
+        self.assertFalse(session_admin.has_add_permission(request))
+        self.assertFalse(session_admin.has_delete_permission(request, self.class_session))
+
+        self.client.force_login(self.ordinary)
+        url = reverse(
+            "admin:school_activitysession_change",
+            args=[self.class_session.pk],
+        )
+        response = self.client.post(
+            url,
+            {
+                "date": self.class_session.date.isoformat(),
+                "academic_year": self.year.pk,
+                "activity_type": self.activity.pk,
+                "name": "Hacked name",
+                "start_time": "09:00:00",
+                "end_time": "09:40:00",
+                "audience_kind": AudienceKind.CLASS,
+                "class_section": self.section.pk,
+                "responsible_staff": self.ordinary.pk,
+            },
+        )
+        self.assertNotEqual(response.status_code, 200)
+        self.class_session.refresh_from_db()
+        self.assertEqual(self.class_session.name, "Period 3")
+        self.assertEqual(self.class_session.responsible_staff_id, self.responsible.pk)
+
+    def test_attendance_revision_admin_cannot_delete(self):
+        entry = AttendanceEntry.objects.create(
+            activity_session=self.class_session,
+            student=self.student,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.responsible,
+        )
+        entry.status = AttendanceStatus.ABSENT
+        entry.updated_by = self.admin_user
+        entry._status_change_reason = "correction"
+        entry.save()
+        revision = AttendanceRevision.objects.get()
+
+        revision_admin = site._registry[AttendanceRevision]
+        for user in (self.admin_user, self.ordinary, self.responsible):
+            request = self._admin_request(user)
+            self.assertFalse(revision_admin.has_add_permission(request))
+            self.assertFalse(revision_admin.has_change_permission(request, revision))
+            self.assertFalse(revision_admin.has_delete_permission(request))
+            self.assertFalse(revision_admin.has_delete_permission(request, revision))
+
+        self.client.force_login(self.admin_user)
+        url = reverse("admin:school_attendancerevision_delete", args=[revision.pk])
+        response = self.client.post(url, {"post": "yes"})
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(AttendanceRevision.objects.filter(pk=revision.pk).exists())
+
+    def test_participant_admin_writes_are_administration_only(self):
+        participant = ActivitySessionParticipant.objects.create(
+            session=self.class_session,
+            student=self.student,
+        )
+        participant_admin = site._registry[ActivitySessionParticipant]
+        staff_request = self._admin_request(self.ordinary)
+        admin_request = self._admin_request(self.admin_user)
+        self.assertFalse(participant_admin.has_add_permission(staff_request))
+        self.assertFalse(participant_admin.has_change_permission(staff_request, participant))
+        self.assertFalse(participant_admin.has_delete_permission(staff_request, participant))
+        self.assertTrue(participant_admin.has_add_permission(admin_request))
+        self.assertTrue(participant_admin.has_change_permission(admin_request, participant))
+        self.assertTrue(participant_admin.has_delete_permission(admin_request, participant))
+
+        self.client.force_login(self.ordinary)
+        add_url = reverse("admin:school_activitysessionparticipant_add")
+        response = self.client.post(
+            add_url,
+            {"session": self.house_session.pk, "student": self.student.pk},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(ActivitySessionParticipant.objects.count(), 1)
+
