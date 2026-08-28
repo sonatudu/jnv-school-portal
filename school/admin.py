@@ -8,6 +8,7 @@ from .models import (
     ActivityType,
     AttendanceEntry,
     AttendanceRevision,
+    AudienceKind,
     ClassSection,
     ClassTeacherAssignment,
     ClassTimetableEntry,
@@ -27,6 +28,7 @@ from .models import (
     TeacherProfile,
     TeachingAssignment,
 )
+from accounts.models import UserCategory
 
 
 @admin.register(AcademicYear)
@@ -244,6 +246,93 @@ class DutyTypeAdmin(admin.ModelAdmin):
     ordering = ("name",)
 
 
+def _posted_fk_id(form, field_name):
+    key = form.add_prefix(field_name)
+    raw = form.data.get(key) if form.data else None
+    if raw not in (None, ""):
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+    if form.instance.pk:
+        return getattr(form.instance, f"{field_name}_id")
+    return None
+
+
+class RoutineSlotInline(admin.TabularInline):
+    model = RoutineSlot
+    extra = 3
+    ordering = ("sort_order", "start_time")
+    autocomplete_fields = ("activity_type",)
+    fields = ("sort_order", "activity_type", "name", "start_time", "end_time")
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "activity_type":
+            kwargs["queryset"] = ActivityType.objects.filter(is_active=True)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+class ClassTimetableEntryForm(forms.ModelForm):
+    class Meta:
+        model = ClassTimetableEntry
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        year_id = _posted_fk_id(self, "academic_year")
+        class_id = _posted_fk_id(self, "class_section")
+        subject_id = _posted_fk_id(self, "subject")
+
+        assignments = TeachingAssignment.objects.all()
+        if year_id:
+            assignments = assignments.filter(academic_year_id=year_id)
+
+        class_assignments = assignments
+        if class_id:
+            class_assignments = assignments.filter(class_section_id=class_id)
+
+        self.fields["class_section"].queryset = ClassSection.objects.filter(
+            is_active=True,
+            pk__in=assignments.values("class_section"),
+        )
+        subject_assignments = class_assignments if class_id else assignments
+        self.fields["subject"].queryset = Subject.objects.filter(
+            is_active=True,
+            pk__in=subject_assignments.values("subject"),
+        )
+        teacher_assignments = class_assignments
+        if subject_id:
+            teacher_assignments = teacher_assignments.filter(subject_id=subject_id)
+        self.fields["teacher"].queryset = TeacherProfile.objects.filter(
+            user__is_active=True,
+            user__category=UserCategory.STAFF,
+            pk__in=teacher_assignments.values("teacher"),
+        ).select_related("user")
+
+        slots = RoutineSlot.objects.filter(
+            routine__is_active=True,
+            activity_type__is_active=True,
+            activity_type__default_audience_kind=AudienceKind.CLASS,
+        ).select_related("routine", "activity_type")
+        if year_id:
+            slots = slots.filter(routine__academic_year_id=year_id)
+        self.fields["routine_slot"].queryset = slots
+
+
+class SchoolCalendarDayForm(forms.ModelForm):
+    class Meta:
+        model = SchoolCalendarDay
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        year_id = _posted_fk_id(self, "academic_year")
+        routines = Routine.objects.filter(is_active=True)
+        if year_id:
+            routines = routines.filter(academic_year_id=year_id)
+        self.fields["routine"].queryset = routines
+
+
 @admin.register(Routine)
 class RoutineAdmin(admin.ModelAdmin):
     list_display = ("name", "academic_year", "is_active")
@@ -251,30 +340,50 @@ class RoutineAdmin(admin.ModelAdmin):
     search_fields = ("name",)
     autocomplete_fields = ("academic_year",)
     ordering = ("academic_year", "name")
+    inlines = (RoutineSlotInline,)
 
 
 @admin.register(RoutineSlot)
 class RoutineSlotAdmin(admin.ModelAdmin):
     list_display = ("name", "routine", "activity_type", "start_time", "end_time", "sort_order")
-    list_filter = ("routine", "activity_type")
+    list_filter = ("routine__academic_year", "routine", "activity_type")
     search_fields = ("name", "routine__name", "activity_type__name")
     autocomplete_fields = ("routine", "activity_type")
     ordering = ("routine", "sort_order")
+    list_select_related = ("routine", "activity_type")
 
 
 @admin.register(SchoolCalendarDay)
 class SchoolCalendarDayAdmin(admin.ModelAdmin):
+    form = SchoolCalendarDayForm
     list_display = ("date", "academic_year", "routine", "note")
     list_filter = ("academic_year", "routine")
+    date_hierarchy = "date"
+    list_editable = ("routine", "note")
     search_fields = ("note", "routine__name")
-    autocomplete_fields = ("academic_year", "routine")
+    autocomplete_fields = ("academic_year",)
     ordering = ("-date",)
+    list_select_related = ("academic_year", "routine")
 
 
 @admin.register(ClassTimetableEntry)
 class ClassTimetableEntryAdmin(admin.ModelAdmin):
-    list_display = ("class_section", "routine_slot", "subject", "teacher", "academic_year")
-    list_filter = ("academic_year", "class_section", "subject")
+    form = ClassTimetableEntryForm
+    list_display = (
+        "academic_year",
+        "routine",
+        "routine_slot",
+        "class_section",
+        "subject",
+        "teacher",
+    )
+    list_filter = (
+        "academic_year",
+        "routine_slot__routine",
+        "class_section",
+        "routine_slot",
+        "subject",
+    )
     search_fields = (
         "class_section__display_name",
         "subject__name",
@@ -282,21 +391,22 @@ class ClassTimetableEntryAdmin(admin.ModelAdmin):
         "teacher__user__first_name",
         "teacher__user__last_name",
         "routine_slot__name",
+        "routine_slot__routine__name",
     )
-    autocomplete_fields = (
-        "academic_year",
-        "class_section",
-        "routine_slot",
-        "subject",
-        "teacher",
-    )
+    autocomplete_fields = ("academic_year",)
     list_select_related = (
         "academic_year",
         "class_section",
-        "routine_slot",
+        "routine_slot__routine",
+        "routine_slot__activity_type",
         "subject",
         "teacher__user",
     )
+    ordering = ("academic_year", "class_section", "routine_slot__sort_order")
+
+    @admin.display(description="Routine", ordering="routine_slot__routine")
+    def routine(self, obj):
+        return obj.routine_slot.routine
 
 
 @admin.register(StudentGroup)

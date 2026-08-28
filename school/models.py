@@ -451,6 +451,9 @@ class ActivityType(models.Model):
     def __str__(self):
         return self.name
 
+    def is_class_timetable_eligible(self):
+        return self.is_active and self.default_audience_kind == AudienceKind.CLASS
+
 
 class DutyType(models.Model):
     name = models.CharField(max_length=80, unique=True)
@@ -613,18 +616,47 @@ class ClassTimetableEntry(models.Model):
 
     def clean(self):
         super().clean()
-        if (
-            self.routine_slot_id
-            and self.academic_year_id
-            and self.routine_slot.routine.academic_year_id != self.academic_year_id
-        ):
-            raise ValidationError(
-                {"routine_slot": "Routine slot must belong to the same academic year."}
-            )
+        errors = {}
+        if self.routine_slot_id:
+            slot = self.routine_slot
+            if (
+                self.academic_year_id
+                and slot.routine.academic_year_id != self.academic_year_id
+            ):
+                errors["routine_slot"] = "Routine slot must belong to the same academic year."
+            elif not slot.routine.is_active:
+                errors["routine_slot"] = "Cannot assign an inactive routine."
+            elif not slot.activity_type.is_class_timetable_eligible():
+                errors["routine_slot"] = (
+                    "This slot's activity type is not eligible for a class timetable entry."
+                )
         if self.teacher_id and self.teacher.user.category != UserCategory.STAFF:
-            raise ValidationError(
-                {"teacher": "Timetable entries require a Staff teacher profile."}
+            errors["teacher"] = "Timetable entries require a Staff teacher profile."
+        elif self.teacher_id and not self.teacher.user.is_active:
+            errors["teacher"] = "Cannot assign an inactive teacher."
+        if self.class_section_id and not self.class_section.is_active:
+            errors["class_section"] = "Cannot assign an inactive class section."
+        if self.subject_id and not self.subject.is_active:
+            errors["subject"] = "Cannot assign an inactive subject."
+        if (
+            "teacher" not in errors
+            and self.teacher_id
+            and self.subject_id
+            and self.class_section_id
+            and self.academic_year_id
+            and not TeachingAssignment.objects.filter(
+                teacher=self.teacher,
+                subject=self.subject,
+                class_section=self.class_section,
+                academic_year=self.academic_year,
+            ).exists()
+        ):
+            errors["teacher"] = (
+                "This teacher is not assigned to teach that subject to this class "
+                "in this academic year."
             )
+        if errors:
+            raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
         self.full_clean()
