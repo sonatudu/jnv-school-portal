@@ -1,0 +1,91 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  .report-form { margin: 0 0 1em; display: flex; flex-wrap: wrap; gap: 0.75em; align-items: end; }
+  .report-meta, .report-summary { margin: 0.5em 0 1em; }
+  .report-table { width: 100%; border-collapse: collapse; }
+  .report-table th, .report-table td { padding: 6px 8px; vertical-align: top; }
+</style>
+{% endblock %}
+
+{% block content %}
+<p class="report-meta">{{ house }} · House attendance report</p>
+
+<form method="get" class="report-form">
+  <label>Academic year
+    <select name="academic_year">
+      {% for year in years %}
+        <option value="{{ year.pk }}" {% if selected_year and selected_year.pk == year.pk %}selected{% endif %}>{{ year }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>From
+    <input type="date" name="date_from" value="{% if date_from %}{{ date_from|date:'Y-m-d' }}{% endif %}">
+  </label>
+  <label>To
+    <input type="date" name="date_to" value="{% if date_to %}{{ date_to|date:'Y-m-d' }}{% endif %}">
+  </label>
+  <button type="submit" class="default">Show</button>
+</form>
+
+{% if notice %}
+  <p>{{ notice }}</p>
+{% endif %}
+
+<div class="report-summary">
+  <strong>Summary</strong>
+  · Current roster: {{ report.roster_size }}
+  · Students with marks: {{ report.students_with_marks }}
+  · Roster students with no marks: {{ report.students_with_no_marks }}
+  · Present: {{ report.status_counts.present }}
+  · Absent: {{ report.status_counts.absent }}
+  · Late: {{ report.status_counts.late }}
+  · Leave: {{ report.status_counts.leave }}
+  · Total marked: {{ report.total_marked }}
+  · Present rate (of marked): {{ percentage_display }}
+</div>
+
+<table class="report-table">
+  <thead>
+    <tr>
+      <th>Roll</th>
+      <th>Admission</th>
+      <th>Name</th>
+      <th>Roster</th>
+      <th>Eligible</th>
+      <th>Marked</th>
+      <th>Unmarked</th>
+      <th>Present</th>
+      <th>Absent</th>
+      <th>Late</th>
+      <th>Leave</th>
+      <th>Present rate</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in report.student_rows %}
+    <tr>
+      <td>{{ row.student.roll_number }}</td>
+      <td>{{ row.student.admission_number }}</td>
+      <td>{{ row.student.full_name }}</td>
+      <td>{% if row.on_current_roster %}Current roster{% else %}Not on current roster{% endif %}</td>
+      <td>{{ row.eligible }}</td>
+      <td>{{ row.marked }}</td>
+      <td>{{ row.unmarked }}</td>
+      <td>{{ row.present }}</td>
+      <td>{{ row.absent }}</td>
+      <td>{{ row.late }}</td>
+      <td>{{ row.leave }}</td>
+      <td>{{ row.percentage_display }}</td>
+      <td><a href="{{ row.history_url }}">Attendance history</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="13">No students in this report.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
