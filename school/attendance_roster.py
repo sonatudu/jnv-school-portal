@@ -11,6 +11,7 @@ from django.db.models import Q
 from .models import (
     ActivitySessionParticipant,
     AttendanceEntry,
+    AttendanceStatus,
     AudienceKind,
     Student,
     StudentHouseMembership,
@@ -219,3 +220,107 @@ def overview_rows_for_sessions(sessions):
             }
         )
     return rows
+
+
+def session_target_label(session):
+    """Human-readable class/house/group/school/selected target for a session."""
+    if session.audience_kind == AudienceKind.CLASS:
+        return str(session.class_section) if session.class_section_id else "Class"
+    if session.audience_kind == AudienceKind.HOUSE:
+        return str(session.house) if session.house_id else "House"
+    if session.audience_kind == AudienceKind.STUDENT_GROUP:
+        return str(session.student_group) if session.student_group_id else "Student group"
+    if session.audience_kind == AudienceKind.SCHOOL:
+        return "Whole school"
+    if session.audience_kind == AudienceKind.SELECTED_STUDENTS:
+        return "Selected students"
+    return session.get_audience_kind_display()
+
+
+def build_student_attendance_history(student, sessions):
+    """Read-only history for one student over the given authorized sessions."""
+    sessions = list(sessions)
+    roster_ids = roster_student_ids_by_session(sessions)
+    session_by_id = {session.pk: session for session in sessions}
+    student_id = student.pk
+    on_roster_ids = {
+        session.pk
+        for session in sessions
+        if student_id in roster_ids.get(session.pk, ())
+    }
+
+    entries = []
+    if sessions:
+        entries = list(
+            AttendanceEntry.objects.filter(
+                student=student,
+                activity_session_id__in=session_by_id.keys(),
+            )
+            .select_related(
+                "activity_session__activity_type",
+                "activity_session__class_section",
+                "activity_session__house",
+                "activity_session__student_group",
+                "activity_session__subject",
+                "activity_session__responsible_staff",
+                "taken_by",
+                "updated_by",
+            )
+            .prefetch_related("revisions")
+            .order_by(
+                "-activity_session__date",
+                "-activity_session__start_time",
+                "activity_session__name",
+            )
+        )
+
+    marked_rows = []
+    marked_session_ids = set()
+    status_counts = {value: 0 for value, _label in AttendanceStatus.choices}
+    for entry in entries:
+        session = entry.activity_session
+        marked_session_ids.add(session.pk)
+        status_counts[entry.status] = status_counts.get(entry.status, 0) + 1
+        revisions = list(entry.revisions.all())
+        marked_rows.append(
+            {
+                "entry": entry,
+                "session": session,
+                "is_orphan": session.pk not in on_roster_ids,
+                "latest_revision": revisions[0] if revisions else None,
+                "target": session_target_label(session),
+            }
+        )
+
+    unmarked_sessions = [
+        session
+        for session in sorted(
+            sessions,
+            key=lambda item: (item.date, item.start_time, item.name),
+            reverse=True,
+        )
+        if session.pk in on_roster_ids and session.pk not in marked_session_ids
+    ]
+    unmarked_rows = [
+        {
+            "session": session,
+            "target": session_target_label(session),
+        }
+        for session in unmarked_sessions
+    ]
+
+    total_marked = len(marked_rows)
+    total_eligible = len(on_roster_ids | marked_session_ids)
+    if total_eligible:
+        percentage = (100.0 * total_marked) / total_eligible
+    else:
+        percentage = None
+
+    return {
+        "marked_rows": marked_rows,
+        "unmarked_rows": unmarked_rows,
+        "status_counts": status_counts,
+        "total_marked": total_marked,
+        "total_eligible": total_eligible,
+        "percentage": percentage,
+    }

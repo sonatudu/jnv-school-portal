@@ -8,6 +8,7 @@ from django.urls import reverse
 from accounts.models import UserCategory
 
 from .attendance_roster import (
+    build_student_attendance_history,
     completion_status,
     orphan_entries_for_session,
     roster_student_ids_by_session,
@@ -928,4 +929,311 @@ class AttendanceOverviewAdminTests(TestCase):
         self.assertContains(response, "No school calendar day for this date")
         self.assertNotContains(response, "Should stay hidden")
         self.assertEqual(ActivitySession.objects.count(), before)
+
+
+class StudentAttendanceHistoryTests(TestCase):
+    def setUp(self):
+        self.year = AcademicYear.objects.create(
+            name="2026-27",
+            start_date=date(2026, 4, 1),
+            end_date=date(2027, 3, 31),
+            is_current=True,
+        )
+        self.other_year = AcademicYear.objects.create(
+            name="2025-26",
+            start_date=date(2025, 4, 1),
+            end_date=date(2026, 3, 31),
+        )
+        self.section = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="A",
+            display_name="VI-A",
+        )
+        self.other_section = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="B",
+            display_name="VI-B",
+        )
+        self.admin_user = User.objects.create_user(
+            username="hist-admin",
+            password="x",
+            category=UserCategory.ADMINISTRATION,
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.staff = User.objects.create_user(
+            username="hist-staff",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.other_staff = User.objects.create_user(
+            username="hist-other",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.parent = User.objects.create_user(
+            username="hist-parent",
+            password="x",
+            category=UserCategory.PARENT,
+            is_staff=True,
+        )
+        self.inactive = User.objects.create_user(
+            username="hist-inactive",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+            is_active=False,
+        )
+        self.activity = ActivityType.objects.create(
+            name="Period",
+            takes_attendance=True,
+        )
+        self.no_att = ActivityType.objects.create(
+            name="Assembly",
+            takes_attendance=False,
+        )
+        self.student = Student.objects.create(
+            admission_number="H1",
+            roll_number=1,
+            first_name="Ada",
+            last_name="A",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.section,
+            academic_year=self.year,
+        )
+        self.other_student = Student.objects.create(
+            admission_number="H2",
+            roll_number=1,
+            first_name="Ben",
+            last_name="B",
+            date_of_birth=date(2014, 1, 2),
+            gender="male",
+            class_section=self.other_section,
+            academic_year=self.year,
+        )
+        self.day = date(2026, 8, 28)
+        self.later_day = date(2026, 8, 29)
+        self.staff_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.activity,
+            name="Period 3 VI-A",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.staff,
+        )
+        self.later_session = ActivitySession.objects.create(
+            date=self.later_day,
+            academic_year=self.year,
+            activity_type=self.activity,
+            name="Period 3 later",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.staff,
+        )
+        self.other_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.activity,
+            name="Period 3 VI-B",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.other_section,
+            responsible_staff=self.other_staff,
+        )
+        self.no_att_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.no_att,
+            name="Silent assembly",
+            start_time=time(8, 0),
+            end_time=time(8, 20),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.staff,
+        )
+        self.old_session = ActivitySession.objects.create(
+            date=date(2025, 8, 28),
+            academic_year=self.other_year,
+            activity_type=self.activity,
+            name="Old year period",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.staff,
+        )
+        self.url = reverse(
+            "admin:school_student_attendance_history",
+            args=[self.student.pk],
+        )
+
+    def test_administration_sees_authorized_history(self):
+        AttendanceEntry.objects.create(
+            activity_session=self.staff_session,
+            student=self.student,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.staff,
+        )
+        self.client.force_login(self.admin_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Period 3 VI-A")
+        self.assertContains(response, "Period 3 later")
+        self.assertContains(response, "Present")
+
+    def test_staff_sees_only_authorized_sessions(self):
+        AttendanceEntry.objects.create(
+            activity_session=self.other_session,
+            student=self.student,
+            status=AttendanceStatus.ABSENT,
+            taken_by=self.other_staff,
+        )
+        AttendanceEntry.objects.create(
+            activity_session=self.staff_session,
+            student=self.student,
+            status=AttendanceStatus.LATE,
+            taken_by=self.staff,
+        )
+        self.client.force_login(self.staff)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Period 3 VI-A")
+        self.assertContains(response, "Late")
+        self.assertNotContains(response, "Period 3 VI-B")
+
+    def test_parent_and_inactive_cannot_access_history(self):
+        self.client.force_login(self.parent)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+        self.client.force_login(self.inactive)
+        self.assertIn(self.client.get(self.url).status_code, (302, 403))
+
+    def test_year_and_date_range_filter(self):
+        AttendanceEntry.objects.create(
+            activity_session=self.old_session,
+            student=self.student,
+            status=AttendanceStatus.LEAVE,
+            taken_by=self.staff,
+        )
+        self.client.force_login(self.staff)
+        response = self.client.get(self.url)
+        self.assertNotContains(response, "Old year period")
+        response = self.client.get(
+            self.url,
+            {"academic_year": self.other_year.pk},
+        )
+        self.assertContains(response, "Old year period")
+        self.assertContains(response, "Leave")
+        response = self.client.get(
+            self.url,
+            {
+                "academic_year": self.year.pk,
+                "date_from": self.day.isoformat(),
+                "date_to": self.day.isoformat(),
+            },
+        )
+        self.assertContains(response, "Period 3 VI-A")
+        self.assertNotContains(response, "Period 3 later")
+
+    def test_orphan_entry_is_listed_and_counted(self):
+        AttendanceEntry.objects.create(
+            activity_session=self.other_session,
+            student=self.student,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.other_staff,
+        )
+        self.client.force_login(self.admin_user)
+        response = self.client.get(self.url)
+        self.assertContains(response, "Period 3 VI-B")
+        self.assertContains(response, "Not on current roster")
+        self.assertContains(response, "Total marked: 1")
+
+    def test_percentage_and_unmarked_are_not_absent(self):
+        AttendanceEntry.objects.create(
+            activity_session=self.staff_session,
+            student=self.student,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.staff,
+        )
+        history = build_student_attendance_history(
+            self.student,
+            [self.staff_session, self.later_session],
+        )
+        self.assertEqual(history["total_marked"], 1)
+        self.assertEqual(history["total_eligible"], 2)
+        self.assertEqual(history["percentage"], 50.0)
+        self.assertEqual(history["status_counts"][AttendanceStatus.ABSENT], 0)
+        self.assertEqual(len(history["unmarked_rows"]), 1)
+        self.assertEqual(history["unmarked_rows"][0]["session"], self.later_session)
+
+        self.client.force_login(self.staff)
+        response = self.client.get(
+            self.url,
+            {
+                "academic_year": self.year.pk,
+                "date_from": self.day.isoformat(),
+                "date_to": self.later_day.isoformat(),
+            },
+        )
+        self.assertContains(response, "50%")
+        self.assertContains(response, "Period 3 later")
+        self.assertContains(response, "Not marked yet")
+        unmarked_html = response.content.decode().split("Not marked yet", 1)[1]
+        self.assertNotIn("Absent", unmarked_html)
+
+    def test_non_attendance_sessions_excluded(self):
+        self.client.force_login(self.staff)
+        response = self.client.get(self.url)
+        self.assertNotContains(response, "Silent assembly")
+
+    def test_guessed_url_does_not_leak_unauthorized_entries(self):
+        AttendanceEntry.objects.create(
+            activity_session=self.other_session,
+            student=self.student,
+            status=AttendanceStatus.ABSENT,
+            taken_by=self.other_staff,
+        )
+        self.client.force_login(self.staff)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Period 3 VI-B")
+        other_mark = reverse(
+            "admin:school_activitysession_mark_attendance",
+            args=[self.other_session.pk],
+        )
+        self.assertNotContains(response, other_mark)
+
+    def test_history_post_does_not_write_attendance(self):
+        self.client.force_login(self.staff)
+        before = AttendanceEntry.objects.count()
+        response = self.client.post(
+            self.url,
+            {f"status_{self.student.pk}": AttendanceStatus.ABSENT},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(AttendanceEntry.objects.count(), before)
+
+    def test_zero_eligible_percentage_is_na(self):
+        selected = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.activity,
+            name="Empty selected",
+            start_time=time(11, 0),
+            end_time=time(11, 20),
+            audience_kind=AudienceKind.SELECTED_STUDENTS,
+            responsible_staff=self.staff,
+        )
+        history = build_student_attendance_history(self.student, [selected])
+        self.assertEqual(history["total_eligible"], 0)
+        self.assertEqual(history["total_marked"], 0)
+        self.assertIsNone(history["percentage"])
 

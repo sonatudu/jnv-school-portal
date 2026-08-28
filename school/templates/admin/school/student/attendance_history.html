@@ -1,0 +1,131 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  .history-form { margin: 0 0 1em; display: flex; flex-wrap: wrap; gap: 0.75em; align-items: end; }
+  .history-meta, .history-summary { margin: 0.5em 0 1em; }
+  .history-table { width: 100%; border-collapse: collapse; margin-bottom: 1.5em; }
+  .history-table th, .history-table td { padding: 6px 8px; vertical-align: top; }
+</style>
+{% endblock %}
+
+{% block content %}
+<p class="history-meta">
+  {{ student.full_name }} ({{ student.admission_number }})
+  · Current class: {{ student.class_section }}
+  · Current year: {{ student.academic_year }}
+</p>
+
+<form method="get" class="history-form">
+  <label>Academic year
+    <select name="academic_year">
+      {% for year in years %}
+        <option value="{{ year.pk }}" {% if selected_year and selected_year.pk == year.pk %}selected{% endif %}>{{ year }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>From
+    <input type="date" name="date_from" value="{% if date_from %}{{ date_from|date:'Y-m-d' }}{% endif %}">
+  </label>
+  <label>To
+    <input type="date" name="date_to" value="{% if date_to %}{{ date_to|date:'Y-m-d' }}{% endif %}">
+  </label>
+  <button type="submit" class="default">Show</button>
+</form>
+
+{% if notice %}
+  <p>{{ notice }}</p>
+{% endif %}
+
+<div class="history-summary">
+  <strong>Summary</strong>
+  · Present: {{ history.status_counts.present }}
+  · Absent: {{ history.status_counts.absent }}
+  · Late: {{ history.status_counts.late }}
+  · Leave: {{ history.status_counts.leave }}
+  · Total marked: {{ history.total_marked }}
+  · Attendance-capable sessions: {{ history.total_eligible }}
+  · Attendance: {{ percentage_display }}
+</div>
+
+<h2>Marked attendance</h2>
+<table class="history-table">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Time</th>
+      <th>Session</th>
+      <th>Audience</th>
+      <th>Target</th>
+      <th>Subject</th>
+      <th>Status</th>
+      <th>Taken by</th>
+      <th>Last correction</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in history.marked_rows %}
+    <tr>
+      <td>{{ row.session.date }}</td>
+      <td>{{ row.session.start_time }}–{{ row.session.end_time }}</td>
+      <td>{{ row.session.name }} ({{ row.session.activity_type }})</td>
+      <td>{{ row.session.get_audience_kind_display }}</td>
+      <td>{{ row.target }}</td>
+      <td>{% if row.session.subject %}{{ row.session.subject }}{% else %}—{% endif %}</td>
+      <td>{{ row.entry.get_status_display }}</td>
+      <td>{{ row.entry.taken_by }} at {{ row.entry.taken_at }}</td>
+      <td>
+        {% if row.entry.updated_by %}
+          {{ row.entry.updated_by }} at {{ row.entry.updated_at }}
+          {% if row.latest_revision %}
+            ({{ row.latest_revision.get_old_status_display }} → {{ row.latest_revision.get_new_status_display }})
+          {% endif %}
+        {% else %}
+          —
+        {% endif %}
+        {% if row.is_orphan %}<br>Not on current roster{% endif %}
+      </td>
+      <td>
+        <a href="{{ row.mark_url }}">Mark attendance</a>
+        {% if row.entry_url %} · <a href="{{ row.entry_url }}">Entry</a>{% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="10">No marked attendance in this range.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Not marked yet</h2>
+<table class="history-table">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Time</th>
+      <th>Session</th>
+      <th>Audience</th>
+      <th>Target</th>
+      <th>Subject</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in history.unmarked_rows %}
+    <tr>
+      <td>{{ row.session.date }}</td>
+      <td>{{ row.session.start_time }}–{{ row.session.end_time }}</td>
+      <td>{{ row.session.name }} ({{ row.session.activity_type }})</td>
+      <td>{{ row.session.get_audience_kind_display }}</td>
+      <td>{{ row.target }}</td>
+      <td>{% if row.session.subject %}{{ row.session.subject }}{% else %}—{% endif %}</td>
+      <td><a href="{{ row.mark_url }}">Mark attendance</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7">No unmarked eligible sessions in this range.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

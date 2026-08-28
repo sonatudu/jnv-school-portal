@@ -74,6 +74,7 @@ class StudentAdmin(admin.ModelAdmin):
         "academic_year",
         "gender",
         "is_active",
+        "attendance_history_link",
     )
     list_filter = ("is_active", "academic_year", "class_section", "gender")
     search_fields = (
@@ -86,6 +87,152 @@ class StudentAdmin(admin.ModelAdmin):
     autocomplete_fields = ("class_section", "academic_year")
     list_select_related = ("class_section", "academic_year")
     list_per_page = 50
+
+    def changelist_view(self, request, extra_context=None):
+        self._request = request
+        return super().changelist_view(request, extra_context)
+
+    def get_urls(self):
+        extra = [
+            path(
+                "<int:object_id>/attendance-history/",
+                self.admin_site.admin_view(self.attendance_history_view),
+                name="school_student_attendance_history",
+            ),
+        ]
+        return extra + super().get_urls()
+
+    @admin.display(description="Attendance")
+    def attendance_history_link(self, obj):
+        url = reverse("admin:school_student_attendance_history", args=[obj.pk])
+        return format_html('<a href="{}">Attendance history</a>', url)
+
+    def _forbidden_history(self, request, message):
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Attendance history",
+            "message": message,
+            "opts": self.model._meta,
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/activitysession/mark_attendance_denied.html",
+            context,
+            status=403,
+        )
+
+    def attendance_history_view(self, request, object_id):
+        from .attendance_auth import sessions_user_may_mark
+        from .attendance_roster import build_student_attendance_history
+
+        user = request.user
+        if (
+            not user.is_authenticated
+            or not user.is_active
+            or user.category == UserCategory.PARENT
+        ):
+            return self._forbidden_history(
+                request,
+                "You are not authorized to view student attendance history.",
+            )
+
+        student = (
+            Student.objects.select_related("class_section", "academic_year")
+            .filter(pk=object_id)
+            .first()
+        )
+        if student is None:
+            raise Http404("Student not found.")
+
+        years = list(AcademicYear.objects.order_by("-start_date"))
+        notice = ""
+        selected_year = student.academic_year
+        raw_year = request.GET.get("academic_year")
+        if raw_year:
+            try:
+                selected_year = AcademicYear.objects.get(pk=int(raw_year))
+            except (AcademicYear.DoesNotExist, TypeError, ValueError):
+                notice = "Enter a valid academic year."
+                selected_year = None
+
+        date_from = selected_year.start_date if selected_year else None
+        date_to = selected_year.end_date if selected_year else None
+        raw_from = request.GET.get("date_from")
+        raw_to = request.GET.get("date_to")
+        if raw_from:
+            try:
+                date_from = date.fromisoformat(raw_from)
+            except ValueError:
+                notice = "Enter a valid start date."
+                date_from = None
+        if raw_to:
+            try:
+                date_to = date.fromisoformat(raw_to)
+            except ValueError:
+                notice = "Enter a valid end date."
+                date_to = None
+        if date_from and date_to and date_from > date_to:
+            notice = "The start date must be on or before the end date."
+            date_from = None
+            date_to = None
+
+        history = build_student_attendance_history(student, [])
+        if selected_year and date_from and date_to:
+            sessions = (
+                sessions_user_may_mark(user)
+                .filter(
+                    academic_year=selected_year,
+                    date__gte=date_from,
+                    date__lte=date_to,
+                )
+                .select_related(
+                    "activity_type",
+                    "class_section",
+                    "house",
+                    "student_group",
+                    "subject",
+                    "responsible_staff",
+                )
+                .order_by("-date", "-start_time", "name")
+            )
+            history = build_student_attendance_history(student, sessions)
+            for row in history["marked_rows"]:
+                row["mark_url"] = reverse(
+                    "admin:school_activitysession_mark_attendance",
+                    args=[row["session"].pk],
+                )
+                row["entry_url"] = reverse(
+                    "admin:school_attendanceentry_change",
+                    args=[row["entry"].pk],
+                )
+            for row in history["unmarked_rows"]:
+                row["mark_url"] = reverse(
+                    "admin:school_activitysession_mark_attendance",
+                    args=[row["session"].pk],
+                )
+
+        percentage_display = "N/A"
+        if history["percentage"] is not None:
+            percentage_display = f"{history['percentage']:.1f}".rstrip("0").rstrip(".") + "%"
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Attendance history: {student}",
+            "opts": self.model._meta,
+            "student": student,
+            "years": years,
+            "selected_year": selected_year,
+            "date_from": date_from,
+            "date_to": date_to,
+            "notice": notice,
+            "history": history,
+            "percentage_display": percentage_display,
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/student/attendance_history.html",
+            context,
+        )
 
 
 @admin.register(TeacherProfile)
