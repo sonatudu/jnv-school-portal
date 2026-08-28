@@ -1,0 +1,77 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  .register-form { margin: 0 0 1em; display: flex; flex-wrap: wrap; gap: 0.75em; align-items: end; }
+  .register-notice { margin: 0.75em 0; }
+  .register-table { width: 100%; border-collapse: collapse; }
+  .register-table th, .register-table td { padding: 6px 8px; vertical-align: top; }
+</style>
+{% endblock %}
+
+{% block content %}
+<form method="get" class="register-form">
+  <label>Date:
+    <input type="date" name="date" value="{% if selected_date %}{{ selected_date|date:'Y-m-d' }}{% endif %}">
+  </label>
+  {% for value, label in status_choices %}
+    <label>
+      <input type="checkbox" name="status" value="{{ value }}"
+             {% if value in selected_statuses %}checked{% endif %}>
+      {{ label }}
+    </label>
+  {% endfor %}
+  <button type="submit" class="default">Show</button>
+</form>
+
+{% if notice %}
+  <p class="register-notice">{{ notice }}</p>
+{% endif %}
+
+{% if rows %}
+<table class="register-table">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Time</th>
+      <th>Session</th>
+      <th>Audience</th>
+      <th>Target</th>
+      <th>Roll</th>
+      <th>Admission</th>
+      <th>Student</th>
+      <th>Status</th>
+      <th>Taken by</th>
+      <th>Updated by</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.session.date }}</td>
+      <td>{{ row.session.start_time }}–{{ row.session.end_time }}</td>
+      <td>{{ row.session.name }} ({{ row.session.activity_type }})</td>
+      <td>{{ row.session.get_audience_kind_display }}</td>
+      <td>{{ row.target }}</td>
+      <td>{{ row.entry.student.roll_number }}</td>
+      <td>{{ row.entry.student.admission_number }}</td>
+      <td>{{ row.entry.student.full_name }}</td>
+      <td>{{ row.entry.get_status_display }}</td>
+      <td>{{ row.entry.taken_by }} at {{ row.entry.taken_at }}</td>
+      <td>
+        {% if row.entry.updated_by %}
+          {{ row.entry.updated_by }} at {{ row.entry.updated_at }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td><a href="{{ row.mark_url }}">Mark attendance</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

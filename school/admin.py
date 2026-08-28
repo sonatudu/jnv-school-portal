@@ -4,7 +4,7 @@ from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
-from django.http import Http404, HttpResponseRedirect
+from django.http import Http404, HttpResponseNotAllowed, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils import timezone
@@ -794,6 +794,7 @@ class SchoolCalendarDayAdmin(admin.ModelAdmin):
         "note",
         "sessions_on_this_date",
         "attendance_overview_link",
+        "absences_this_date_link",
     )
     list_filter = ("academic_year", "routine")
     date_hierarchy = "date"
@@ -818,6 +819,15 @@ class SchoolCalendarDayAdmin(admin.ModelAdmin):
         url = reverse("admin:school_activitysession_attendance_overview")
         return format_html(
             '<a href="{}?date={}">Attendance overview</a>',
+            url,
+            obj.date.isoformat(),
+        )
+
+    @admin.display(description="Absences")
+    def absences_this_date_link(self, obj):
+        url = reverse("admin:school_activitysession_absence_register")
+        return format_html(
+            '<a href="{}?date={}">Absences this date</a>',
             url,
             obj.date.isoformat(),
         )
@@ -996,6 +1006,11 @@ class ActivitySessionAdmin(admin.ModelAdmin):
                 name="school_activitysession_attendance_overview",
             ),
             path(
+                "absence-register/",
+                self.admin_site.admin_view(self.absence_register_view),
+                name="school_activitysession_absence_register",
+            ),
+            path(
                 "<int:object_id>/mark-attendance/",
                 self.admin_site.admin_view(self.mark_attendance_view),
                 name="school_activitysession_mark_attendance",
@@ -1114,10 +1129,142 @@ class ActivitySessionAdmin(admin.ModelAdmin):
             "calendar_day": calendar_day,
             "notice": notice,
             "rows": rows,
+            "absence_register_url": (
+                reverse("admin:school_activitysession_absence_register")
+                + f"?date={selected_date.isoformat()}"
+                if selected_date
+                else ""
+            ),
         }
         return TemplateResponse(
             request,
             "admin/school/activitysession/attendance_overview.html",
+            context,
+        )
+
+    def absence_register_view(self, request):
+        from .attendance_auth import sessions_user_may_mark
+
+        if request.method != "GET":
+            return HttpResponseNotAllowed(["GET"])
+
+        user = request.user
+        if (
+            not user.is_authenticated
+            or not user.is_active
+            or user.category == UserCategory.PARENT
+        ):
+            return self._forbidden_attendance(
+                request,
+                "You are not authorized to view the absence register.",
+            )
+
+        exception_statuses = (
+            AttendanceStatus.ABSENT,
+            AttendanceStatus.LATE,
+            AttendanceStatus.LEAVE,
+        )
+        raw_statuses = request.GET.getlist("status")
+        if raw_statuses:
+            selected_statuses = tuple(
+                status for status in raw_statuses if status in exception_statuses
+            )
+        else:
+            selected_statuses = exception_statuses
+
+        date_error = ""
+        raw_date = request.GET.get("date")
+        if raw_date:
+            try:
+                selected_date = date.fromisoformat(raw_date)
+            except ValueError:
+                selected_date = None
+                date_error = "Enter a valid date."
+        else:
+            selected_date = timezone.localdate()
+
+        calendar_day = None
+        notice = date_error
+        entries = []
+        if selected_date is not None:
+            calendar_day = SchoolCalendarDay.objects.filter(date=selected_date).first()
+            if calendar_day is None:
+                notice = (
+                    "No school calendar day for this date. "
+                    "Sessions are not generated from this page."
+                )
+            elif selected_statuses:
+                sessions = sessions_user_may_mark(user).filter(
+                    date=selected_date,
+                    activity_type__takes_attendance=True,
+                )
+                entries = list(
+                    AttendanceEntry.objects.filter(
+                        activity_session__in=sessions,
+                        status__in=selected_statuses,
+                    )
+                    .select_related(
+                        "activity_session",
+                        "activity_session__activity_type",
+                        "activity_session__class_section",
+                        "activity_session__house",
+                        "activity_session__student_group",
+                        "student",
+                        "taken_by",
+                        "updated_by",
+                    )
+                    .order_by(
+                        "activity_session__start_time",
+                        "activity_session__name",
+                        "student__roll_number",
+                        "student__last_name",
+                        "student__first_name",
+                    )
+                )
+                if not entries:
+                    labels = [
+                        dict(AttendanceStatus.choices)[status]
+                        for status in selected_statuses
+                    ]
+                    notice = (
+                        f"No {'/'.join(labels)} marks on your authorized sessions."
+                    )
+            else:
+                notice = "No Absent/Late/Leave marks on your authorized sessions."
+
+        rows = []
+        for entry in entries:
+            session = entry.activity_session
+            rows.append(
+                {
+                    "entry": entry,
+                    "session": session,
+                    "target": self._overview_target_label(session),
+                    "mark_url": reverse(
+                        "admin:school_activitysession_mark_attendance",
+                        args=[session.pk],
+                    ),
+                }
+            )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Daily absence register",
+            "opts": self.model._meta,
+            "selected_date": selected_date,
+            "calendar_day": calendar_day,
+            "notice": notice,
+            "rows": rows,
+            "selected_statuses": selected_statuses,
+            "status_choices": (
+                (AttendanceStatus.ABSENT, "Absent"),
+                (AttendanceStatus.LATE, "Late"),
+                (AttendanceStatus.LEAVE, "Leave"),
+            ),
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/activitysession/absence_register.html",
             context,
         )
 

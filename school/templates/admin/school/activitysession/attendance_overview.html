@@ -19,6 +19,12 @@
   <button type="submit" class="default">Show</button>
 </form>
 
+{% if selected_date %}
+  <p>
+    <a href="{{ absence_register_url }}">Absence register</a>
+  </p>
+{% endif %}
+
 {% if notice %}
   <p class="overview-notice">{{ notice }}</p>
 {% endif %}
