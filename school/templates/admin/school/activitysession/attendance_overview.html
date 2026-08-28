@@ -1,0 +1,60 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  .overview-form { margin: 0 0 1em; }
+  .overview-notice { margin: 0.75em 0; }
+  .overview-table { width: 100%; border-collapse: collapse; }
+  .overview-table th, .overview-table td { padding: 6px 8px; vertical-align: top; }
+</style>
+{% endblock %}
+
+{% block content %}
+<form method="get" class="overview-form">
+  <label>Date:
+    <input type="date" name="date" value="{% if selected_date %}{{ selected_date|date:'Y-m-d' }}{% endif %}">
+  </label>
+  <button type="submit" class="default">Show</button>
+</form>
+
+{% if notice %}
+  <p class="overview-notice">{{ notice }}</p>
+{% endif %}
+
+{% if rows %}
+<table class="overview-table">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Time</th>
+      <th>Activity</th>
+      <th>Audience</th>
+      <th>Target</th>
+      <th>Responsible staff</th>
+      <th>Marked</th>
+      <th>Roster</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.session.date }}</td>
+      <td>{{ row.session.start_time }}–{{ row.session.end_time }}</td>
+      <td>{{ row.session.name }} ({{ row.session.activity_type }})</td>
+      <td>{{ row.session.get_audience_kind_display }}</td>
+      <td>{{ row.target }}</td>
+      <td>{{ row.session.responsible_staff }}</td>
+      <td>{{ row.marked_count }}</td>
+      <td>{{ row.roster_count }}</td>
+      <td>{{ row.status }}</td>
+      <td><a href="{{ row.mark_url }}">Mark attendance</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

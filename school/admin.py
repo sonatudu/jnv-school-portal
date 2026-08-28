@@ -1,3 +1,5 @@
+from datetime import date
+
 from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -368,7 +370,14 @@ class RoutineSlotAdmin(admin.ModelAdmin):
 @admin.register(SchoolCalendarDay)
 class SchoolCalendarDayAdmin(admin.ModelAdmin):
     form = SchoolCalendarDayForm
-    list_display = ("date", "academic_year", "routine", "note", "sessions_on_this_date")
+    list_display = (
+        "date",
+        "academic_year",
+        "routine",
+        "note",
+        "sessions_on_this_date",
+        "attendance_overview_link",
+    )
     list_filter = ("academic_year", "routine")
     date_hierarchy = "date"
     list_editable = ("routine", "note")
@@ -383,6 +392,15 @@ class SchoolCalendarDayAdmin(admin.ModelAdmin):
         url = reverse("admin:school_activitysession_changelist")
         return format_html(
             '<a href="{}?date__exact={}">Sessions on this date</a>',
+            url,
+            obj.date.isoformat(),
+        )
+
+    @admin.display(description="Attendance")
+    def attendance_overview_link(self, obj):
+        url = reverse("admin:school_activitysession_attendance_overview")
+        return format_html(
+            '<a href="{}?date={}">Attendance overview</a>',
             url,
             obj.date.isoformat(),
         )
@@ -556,6 +574,11 @@ class ActivitySessionAdmin(admin.ModelAdmin):
     def get_urls(self):
         extra = [
             path(
+                "attendance-overview/",
+                self.admin_site.admin_view(self.attendance_overview_view),
+                name="school_activitysession_attendance_overview",
+            ),
+            path(
                 "<int:object_id>/mark-attendance/",
                 self.admin_site.admin_view(self.mark_attendance_view),
                 name="school_activitysession_mark_attendance",
@@ -592,6 +615,93 @@ class ActivitySessionAdmin(admin.ModelAdmin):
             "admin/school/activitysession/mark_attendance_denied.html",
             context,
             status=403,
+        )
+
+    def _overview_target_label(self, session):
+        if session.audience_kind == AudienceKind.CLASS:
+            return str(session.class_section) if session.class_section_id else "Class"
+        if session.audience_kind == AudienceKind.HOUSE:
+            return str(session.house) if session.house_id else "House"
+        if session.audience_kind == AudienceKind.STUDENT_GROUP:
+            return str(session.student_group) if session.student_group_id else "Student group"
+        if session.audience_kind == AudienceKind.SCHOOL:
+            return "Whole school"
+        if session.audience_kind == AudienceKind.SELECTED_STUDENTS:
+            return "Selected students"
+        return session.get_audience_kind_display()
+
+    def attendance_overview_view(self, request):
+        from .attendance_auth import sessions_user_may_mark
+        from .attendance_roster import overview_rows_for_sessions
+
+        user = request.user
+        if (
+            not user.is_authenticated
+            or not user.is_active
+            or user.category == UserCategory.PARENT
+        ):
+            return self._forbidden_attendance(
+                request,
+                "You are not authorized to view the attendance overview.",
+            )
+
+        date_error = ""
+        raw_date = request.GET.get("date")
+        if raw_date:
+            try:
+                selected_date = date.fromisoformat(raw_date)
+            except ValueError:
+                selected_date = None
+                date_error = "Enter a valid date."
+        else:
+            selected_date = timezone.localdate()
+
+        calendar_day = None
+        notice = date_error
+        rows = []
+        if selected_date is not None:
+            calendar_day = SchoolCalendarDay.objects.filter(date=selected_date).first()
+            if calendar_day is None:
+                notice = "No school calendar day for this date. Sessions are not generated from this page."
+            else:
+                sessions = (
+                    sessions_user_may_mark(user)
+                    .filter(date=selected_date)
+                    .select_related(
+                        "activity_type",
+                        "class_section",
+                        "house",
+                        "student_group",
+                        "responsible_staff",
+                        "routine_slot",
+                    )
+                    .order_by("start_time", "name")
+                )
+                for item in overview_rows_for_sessions(sessions):
+                    session = item["session"]
+                    mark_url = reverse(
+                        "admin:school_activitysession_mark_attendance",
+                        args=[session.pk],
+                    )
+                    item["target"] = self._overview_target_label(session)
+                    item["mark_url"] = mark_url
+                    rows.append(item)
+                if not rows:
+                    notice = "No attendance-capable sessions for this date."
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Daily attendance overview",
+            "opts": self.model._meta,
+            "selected_date": selected_date,
+            "calendar_day": calendar_day,
+            "notice": notice,
+            "rows": rows,
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/activitysession/attendance_overview.html",
+            context,
         )
 
     def _audience_label(self, session):
