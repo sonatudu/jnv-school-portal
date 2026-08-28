@@ -1,0 +1,133 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  .audit-form { margin: 0 0 1em; display: flex; flex-wrap: wrap; gap: 0.75em; align-items: end; }
+  .audit-summary { margin: 0.5em 0 1em; }
+  .audit-table { width: 100%; border-collapse: collapse; }
+  .audit-table th, .audit-table td { padding: 6px 8px; vertical-align: top; }
+  .audit-pagination { margin: 1em 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<p>Correction history for authorized attendance sessions. This is not the current attendance state.</p>
+
+<form method="get" class="audit-form">
+  <label>Academic year
+    <select name="academic_year">
+      {% for year in years %}
+        <option value="{{ year.pk }}" {% if selected_year and selected_year.pk == year.pk %}selected{% endif %}>{{ year }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>From
+    <input type="date" name="date_from" value="{% if date_from %}{{ date_from|date:'Y-m-d' }}{% endif %}">
+  </label>
+  <label>To
+    <input type="date" name="date_to" value="{% if date_to %}{{ date_to|date:'Y-m-d' }}{% endif %}">
+  </label>
+  <label>Session
+    <select name="session">
+      <option value="">All authorized sessions</option>
+      {% for session in session_options %}
+        <option value="{{ session.pk }}" {% if selected_session_id == session.pk %}selected{% endif %}>
+          {{ session.date }} · {{ session.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Changed by
+    <select name="changed_by">
+      <option value="">Anyone</option>
+      {% for changer in changed_by_options %}
+        <option value="{{ changer.pk }}" {% if selected_changed_by_id == changer.pk %}selected{% endif %}>
+          {{ changer }}
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Student
+    <select name="student">
+      <option value="">All students</option>
+      {% for student in student_options %}
+        <option value="{{ student.pk }}" {% if selected_student_id == student.pk %}selected{% endif %}>
+          {{ student.full_name }} ({{ student.admission_number }})
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>New status
+    <select name="status">
+      <option value="">Any</option>
+      {% for value, label in status_choices %}
+        <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="default">Show</button>
+</form>
+
+{% if notice %}
+  <p>{{ notice }}</p>
+{% endif %}
+
+<div class="audit-summary">
+  <strong>Corrections:</strong> {{ result_count }}
+</div>
+
+{% if rows %}
+<table class="audit-table">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Time</th>
+      <th>Session</th>
+      <th>Activity</th>
+      <th>Audience</th>
+      <th>Target</th>
+      <th>Student</th>
+      <th>Admission Number</th>
+      <th>Old Status</th>
+      <th>New Status</th>
+      <th>Changed By</th>
+      <th>Changed At</th>
+      <th>Reason</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.session.date }}</td>
+      <td>{{ row.session.start_time }}–{{ row.session.end_time }}</td>
+      <td>{{ row.session.name }}</td>
+      <td>{{ row.session.activity_type }}</td>
+      <td>{{ row.session.get_audience_kind_display }}</td>
+      <td>{{ row.target }}</td>
+      <td>{{ row.revision.entry.student.full_name }}</td>
+      <td>{{ row.revision.entry.student.admission_number }}</td>
+      <td>{{ row.revision.get_old_status_display }}</td>
+      <td>{{ row.revision.get_new_status_display }}</td>
+      <td>{{ row.revision.changed_by }}</td>
+      <td>{{ row.revision.changed_at }}</td>
+      <td>{% if row.revision.reason %}{{ row.revision.reason }}{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if page_obj and page_obj.paginator.num_pages > 1 %}
+  <p class="audit-pagination">
+    {% if page_obj.has_previous %}
+      <a href="?{{ filter_query }}{% if filter_query %}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+    {% endif %}
+    Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+    {% if page_obj.has_next %}
+      <a href="?{{ filter_query }}{% if filter_query %}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+    {% endif %}
+  </p>
+{% endif %}
+{% endblock %}

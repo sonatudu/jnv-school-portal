@@ -39,6 +39,12 @@
   <p>{{ notice }}</p>
 {% endif %}
 
+{% if correction_audit_url %}
+  <p>
+    <a href="{{ correction_audit_url }}">Correction audit</a>
+  </p>
+{% endif %}
+
 <div class="history-summary">
   <strong>Summary</strong>
   · Present: {{ history.status_counts.present }}
@@ -90,7 +96,7 @@
       </td>
       <td>
         <a href="{{ row.mark_url }}">Mark attendance</a>
-        {% if row.entry_url %} · <a href="{{ row.entry_url }}">Entry</a>{% endif %}
+        {% if row.correction_audit_url %} · <a href="{{ row.correction_audit_url }}">Correction audit</a>{% endif %}
       </td>
     </tr>
     {% empty %}

@@ -39,11 +39,9 @@
           {% endif %}
           {% if row.latest_revision %}
             <br>{{ row.latest_revision.get_old_status_display }} → {{ row.latest_revision.get_new_status_display }}
-            {% if row.entry_admin_url %}
-              · <a href="{{ row.entry_admin_url }}">History</a>
-            {% endif %}
-          {% elif row.entry_admin_url %}
-            <br><a href="{{ row.entry_admin_url }}">History</a>
+          {% endif %}
+          {% if row.correction_audit_url %}
+            · <a href="{{ row.correction_audit_url }}">Correction audit</a>
           {% endif %}
         {% else %}
           Not marked yet
