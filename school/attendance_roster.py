@@ -464,3 +464,197 @@ def build_house_attendance_report(house, academic_year, sessions):
         is_active=True,
     ).order_by("roll_number", "last_name", "first_name", "admission_number")
     return _report_from_roster_and_sessions(roster_students, sessions)
+
+
+def _empty_school_attendance_report():
+    return {
+        "session_count": 0,
+        "eligible_student_sessions": 0,
+        "total_marked": 0,
+        "marked_on_roster": 0,
+        "orphan_marks": 0,
+        "status_counts": _empty_status_counts(),
+        "percentage": None,
+        "distinct_roster_students": 0,
+        "distinct_students_with_marks": 0,
+        "class_rows": [],
+        "house_rows": [],
+        "activity_type_rows": [],
+        "audience_kind_rows": [],
+    }
+
+
+def _empty_school_bucket():
+    return {
+        "session_count": 0,
+        "eligible_student_sessions": 0,
+        "status_counts": _empty_status_counts(),
+        "total_marked": 0,
+    }
+
+
+def _school_breakdown_row(label, bucket, extra=None):
+    present = bucket["status_counts"].get(AttendanceStatus.PRESENT, 0)
+    row = {
+        "label": label,
+        "session_count": bucket["session_count"],
+        "eligible_student_sessions": bucket["eligible_student_sessions"],
+        "status_counts": bucket["status_counts"],
+        "total_marked": bucket["total_marked"],
+        "percentage": present_rate(present, bucket["total_marked"]),
+    }
+    if extra:
+        row.update(extra)
+    return row
+
+
+def build_school_attendance_report(sessions):
+    """Count-only school report over authorized attendance-capable sessions."""
+    sessions = list(sessions)
+    if not sessions:
+        return _empty_school_attendance_report()
+
+    roster_ids = roster_student_ids_by_session(sessions)
+    entries = list(
+        AttendanceEntry.objects.filter(
+            activity_session_id__in=[session.pk for session in sessions],
+        ).values("activity_session_id", "student_id", "status")
+    )
+    session_by_id = {session.pk: session for session in sessions}
+
+    status_counts = _empty_status_counts()
+    marked_on_roster = 0
+    orphan_marks = 0
+    students_with_marks = set()
+    class_buckets = {}
+    house_buckets = {}
+    activity_buckets = {}
+    audience_buckets = {}
+
+    def _session_bucket(mapping, key):
+        bucket = mapping.get(key)
+        if bucket is None:
+            bucket = _empty_school_bucket()
+            mapping[key] = bucket
+        return bucket
+
+    eligible_student_sessions = 0
+    roster_student_ids = set()
+    for session in sessions:
+        session_roster = roster_ids.get(session.pk, set())
+        roster_size = len(session_roster)
+        eligible_student_sessions += roster_size
+        roster_student_ids.update(session_roster)
+
+        activity_bucket = _session_bucket(activity_buckets, session.activity_type_id)
+        activity_bucket["session_count"] += 1
+        activity_bucket["eligible_student_sessions"] += roster_size
+        activity_bucket["activity_type"] = session.activity_type
+
+        audience_bucket = _session_bucket(audience_buckets, session.audience_kind)
+        audience_bucket["session_count"] += 1
+        audience_bucket["eligible_student_sessions"] += roster_size
+
+        if session.audience_kind == AudienceKind.CLASS and session.class_section_id:
+            class_bucket = _session_bucket(class_buckets, session.class_section_id)
+            class_bucket["session_count"] += 1
+            class_bucket["eligible_student_sessions"] += roster_size
+            class_bucket["class_section"] = session.class_section
+        elif session.audience_kind == AudienceKind.HOUSE and session.house_id:
+            house_bucket = _session_bucket(house_buckets, session.house_id)
+            house_bucket["session_count"] += 1
+            house_bucket["eligible_student_sessions"] += roster_size
+            house_bucket["house"] = session.house
+
+    for entry in entries:
+        status = entry["status"]
+        status_counts[status] = status_counts.get(status, 0) + 1
+        students_with_marks.add(entry["student_id"])
+        session = session_by_id.get(entry["activity_session_id"])
+        if session is None:
+            continue
+        on_roster = entry["student_id"] in roster_ids.get(session.pk, ())
+        if on_roster:
+            marked_on_roster += 1
+        else:
+            orphan_marks += 1
+
+        activity_bucket = activity_buckets[session.activity_type_id]
+        activity_bucket["status_counts"][status] = (
+            activity_bucket["status_counts"].get(status, 0) + 1
+        )
+        activity_bucket["total_marked"] += 1
+
+        audience_bucket = audience_buckets[session.audience_kind]
+        audience_bucket["status_counts"][status] = (
+            audience_bucket["status_counts"].get(status, 0) + 1
+        )
+        audience_bucket["total_marked"] += 1
+
+        if session.audience_kind == AudienceKind.CLASS and session.class_section_id:
+            class_bucket = class_buckets[session.class_section_id]
+            class_bucket["status_counts"][status] = (
+                class_bucket["status_counts"].get(status, 0) + 1
+            )
+            class_bucket["total_marked"] += 1
+        elif session.audience_kind == AudienceKind.HOUSE and session.house_id:
+            house_bucket = house_buckets[session.house_id]
+            house_bucket["status_counts"][status] = (
+                house_bucket["status_counts"].get(status, 0) + 1
+            )
+            house_bucket["total_marked"] += 1
+
+    total_marked = len(entries)
+    audience_labels = dict(AudienceKind.choices)
+    return {
+        "session_count": len(sessions),
+        "eligible_student_sessions": eligible_student_sessions,
+        "total_marked": total_marked,
+        "marked_on_roster": marked_on_roster,
+        "orphan_marks": orphan_marks,
+        "status_counts": status_counts,
+        "percentage": present_rate(
+            status_counts.get(AttendanceStatus.PRESENT, 0),
+            total_marked,
+        ),
+        "distinct_roster_students": len(roster_student_ids),
+        "distinct_students_with_marks": len(students_with_marks),
+        "class_rows": [
+            _school_breakdown_row(
+                str(bucket["class_section"]),
+                bucket,
+                {"class_section": bucket["class_section"]},
+            )
+            for _key, bucket in sorted(
+                class_buckets.items(),
+                key=lambda item: str(item[1]["class_section"]),
+            )
+        ],
+        "house_rows": [
+            _school_breakdown_row(
+                str(bucket["house"]),
+                bucket,
+                {"house": bucket["house"]},
+            )
+            for _key, bucket in sorted(
+                house_buckets.items(),
+                key=lambda item: str(item[1]["house"]),
+            )
+        ],
+        "activity_type_rows": [
+            _school_breakdown_row(
+                str(bucket["activity_type"]),
+                bucket,
+                {"activity_type": bucket["activity_type"]},
+            )
+            for _key, bucket in sorted(
+                activity_buckets.items(),
+                key=lambda item: str(item[1]["activity_type"]),
+            )
+        ],
+        "audience_kind_rows": [
+            _school_breakdown_row(audience_labels.get(kind, kind), audience_buckets[kind])
+            for kind, _label in AudienceKind.choices
+            if kind in audience_buckets
+        ],
+    }

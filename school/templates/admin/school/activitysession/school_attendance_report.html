@@ -1,0 +1,179 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  .report-form { margin: 0 0 1em; display: flex; flex-wrap: wrap; gap: 0.75em; align-items: end; }
+  .report-summary { margin: 0.5em 0 1em; }
+  .report-table { width: 100%; border-collapse: collapse; margin-bottom: 1.5em; }
+  .report-table th, .report-table td { padding: 6px 8px; vertical-align: top; }
+</style>
+{% endblock %}
+
+{% block content %}
+<form method="get" class="report-form">
+  <label>Academic year
+    <select name="academic_year">
+      {% for year in years %}
+        <option value="{{ year.pk }}" {% if selected_year and selected_year.pk == year.pk %}selected{% endif %}>{{ year }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>From
+    <input type="date" name="date_from" value="{% if date_from %}{{ date_from|date:'Y-m-d' }}{% endif %}">
+  </label>
+  <label>To
+    <input type="date" name="date_to" value="{% if date_to %}{{ date_to|date:'Y-m-d' }}{% endif %}">
+  </label>
+  <button type="submit" class="default">Show</button>
+</form>
+
+{% if notice %}
+  <p>{{ notice }}</p>
+{% endif %}
+
+<div class="report-summary">
+  <strong>Summary</strong>
+  · Sessions: {{ report.session_count }}
+  · Eligible student-sessions: {{ report.eligible_student_sessions }}
+  · Marked: {{ report.total_marked }}
+  · Marked on roster: {{ report.marked_on_roster }}
+  · Orphan marks: {{ report.orphan_marks }}
+  · Present: {{ report.status_counts.present }}
+  · Absent: {{ report.status_counts.absent }}
+  · Late: {{ report.status_counts.late }}
+  · Leave: {{ report.status_counts.leave }}
+  · Present rate (of marked): {{ percentage_display }}
+  · Distinct students on authorized rosters: {{ report.distinct_roster_students }}
+  · Distinct students with marks: {{ report.distinct_students_with_marks }}
+</div>
+
+<h2>By class</h2>
+<table class="report-table">
+  <thead>
+    <tr>
+      <th>Class</th>
+      <th>Sessions</th>
+      <th>Eligible student-sessions</th>
+      <th>Present</th>
+      <th>Absent</th>
+      <th>Late</th>
+      <th>Leave</th>
+      <th>Marked</th>
+      <th>Present rate</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in report.class_rows %}
+    <tr>
+      <td>{{ row.label }}</td>
+      <td>{{ row.session_count }}</td>
+      <td>{{ row.eligible_student_sessions }}</td>
+      <td>{{ row.status_counts.present }}</td>
+      <td>{{ row.status_counts.absent }}</td>
+      <td>{{ row.status_counts.late }}</td>
+      <td>{{ row.status_counts.leave }}</td>
+      <td>{{ row.total_marked }}</td>
+      <td>{{ row.percentage_display }}</td>
+      <td><a href="{{ row.report_url }}">Class attendance report</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>By house</h2>
+<table class="report-table">
+  <thead>
+    <tr>
+      <th>House</th>
+      <th>Sessions</th>
+      <th>Eligible student-sessions</th>
+      <th>Present</th>
+      <th>Absent</th>
+      <th>Late</th>
+      <th>Leave</th>
+      <th>Marked</th>
+      <th>Present rate</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in report.house_rows %}
+    <tr>
+      <td>{{ row.label }}</td>
+      <td>{{ row.session_count }}</td>
+      <td>{{ row.eligible_student_sessions }}</td>
+      <td>{{ row.status_counts.present }}</td>
+      <td>{{ row.status_counts.absent }}</td>
+      <td>{{ row.status_counts.late }}</td>
+      <td>{{ row.status_counts.leave }}</td>
+      <td>{{ row.total_marked }}</td>
+      <td>{{ row.percentage_display }}</td>
+      <td><a href="{{ row.report_url }}">House attendance report</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>By activity type</h2>
+<table class="report-table">
+  <thead>
+    <tr>
+      <th>Activity type</th>
+      <th>Sessions</th>
+      <th>Present</th>
+      <th>Absent</th>
+      <th>Late</th>
+      <th>Leave</th>
+      <th>Marked</th>
+      <th>Present rate</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in report.activity_type_rows %}
+    <tr>
+      <td>{{ row.label }}</td>
+      <td>{{ row.session_count }}</td>
+      <td>{{ row.status_counts.present }}</td>
+      <td>{{ row.status_counts.absent }}</td>
+      <td>{{ row.status_counts.late }}</td>
+      <td>{{ row.status_counts.leave }}</td>
+      <td>{{ row.total_marked }}</td>
+      <td>{{ row.percentage_display }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>By audience kind</h2>
+<table class="report-table">
+  <thead>
+    <tr>
+      <th>Audience</th>
+      <th>Sessions</th>
+      <th>Present</th>
+      <th>Absent</th>
+      <th>Late</th>
+      <th>Leave</th>
+      <th>Marked</th>
+      <th>Present rate</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in report.audience_kind_rows %}
+    <tr>
+      <td>{{ row.label }}</td>
+      <td>{{ row.session_count }}</td>
+      <td>{{ row.status_counts.present }}</td>
+      <td>{{ row.status_counts.absent }}</td>
+      <td>{{ row.status_counts.late }}</td>
+      <td>{{ row.status_counts.leave }}</td>
+      <td>{{ row.total_marked }}</td>
+      <td>{{ row.percentage_display }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

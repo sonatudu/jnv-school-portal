@@ -22,6 +22,9 @@
 {% if selected_date %}
   <p>
     <a href="{{ absence_register_url }}">Absence register</a>
+    {% if school_attendance_report_url %}
+      · <a href="{{ school_attendance_report_url }}">School attendance report</a>
+    {% endif %}
   </p>
 {% endif %}
 

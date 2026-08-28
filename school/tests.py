@@ -10,6 +10,7 @@ from accounts.models import UserCategory
 from .attendance_roster import (
     build_class_attendance_report,
     build_house_attendance_report,
+    build_school_attendance_report,
     build_student_attendance_history,
     completion_status,
     orphan_entries_for_session,
@@ -2411,4 +2412,657 @@ class AbsenceRegisterAdminTests(TestCase):
         )
         self.assertContains(response, "Absence register")
         self.assertContains(response, self.register_dated)
+
+
+class SchoolAttendanceReportTests(TestCase):
+    def setUp(self):
+        self.year = AcademicYear.objects.create(
+            name="2026-27",
+            start_date=date(2026, 4, 1),
+            end_date=date(2027, 3, 31),
+            is_current=True,
+        )
+        self.other_year = AcademicYear.objects.create(
+            name="2025-26",
+            start_date=date(2025, 4, 1),
+            end_date=date(2026, 3, 31),
+        )
+        self.section = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="A",
+            display_name="VI-A",
+        )
+        self.other_section = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="B",
+            display_name="VI-B",
+        )
+        self.house = House.objects.create(name="Aravali", code="AR")
+        self.other_house = House.objects.create(name="Nilgiri", code="NL")
+        self.admin_user = User.objects.create_user(
+            username="srep-admin",
+            password="x",
+            category=UserCategory.ADMINISTRATION,
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.staff = User.objects.create_user(
+            username="srep-staff",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.other_staff = User.objects.create_user(
+            username="srep-other",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.lonely_staff = User.objects.create_user(
+            username="srep-lonely",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.hm = User.objects.create_user(
+            username="srep-hm",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.mod = User.objects.create_user(
+            username="srep-mod",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.parent = User.objects.create_user(
+            username="srep-parent",
+            password="x",
+            category=UserCategory.PARENT,
+            is_staff=True,
+        )
+        self.inactive = User.objects.create_user(
+            username="srep-inactive",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+            is_active=False,
+        )
+        self.period = ActivityType.objects.create(
+            name="Period",
+            takes_attendance=True,
+        )
+        self.remedial = ActivityType.objects.create(
+            name="Remedial",
+            takes_attendance=True,
+        )
+        self.no_att = ActivityType.objects.create(
+            name="Assembly",
+            takes_attendance=False,
+        )
+        self.student_a = Student.objects.create(
+            admission_number="SA1",
+            roll_number=1,
+            first_name="Ada",
+            last_name="A",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.section,
+            academic_year=self.year,
+        )
+        self.student_b = Student.objects.create(
+            admission_number="SA2",
+            roll_number=2,
+            first_name="Ben",
+            last_name="B",
+            date_of_birth=date(2014, 1, 2),
+            gender="male",
+            class_section=self.section,
+            academic_year=self.year,
+        )
+        self.other_student = Student.objects.create(
+            admission_number="SB1",
+            roll_number=1,
+            first_name="Cara",
+            last_name="C",
+            date_of_birth=date(2014, 1, 3),
+            gender="female",
+            class_section=self.other_section,
+            academic_year=self.year,
+        )
+        self.orphan = Student.objects.create(
+            admission_number="SX1",
+            roll_number=9,
+            first_name="Ora",
+            last_name="O",
+            date_of_birth=date(2014, 1, 4),
+            gender="female",
+            class_section=self.other_section,
+            academic_year=self.year,
+        )
+        StudentHouseMembership.objects.create(
+            student=self.student_a,
+            house=self.house,
+            academic_year=self.year,
+        )
+        StudentHouseMembership.objects.create(
+            student=self.student_b,
+            house=self.house,
+            academic_year=self.year,
+        )
+        self.day = date(2026, 8, 28)
+        self.later_day = date(2026, 8, 29)
+        self.group = StudentGroup.objects.create(name="Band", academic_year=self.year)
+        HouseMasterAssignment.objects.create(
+            staff=self.hm,
+            house=self.house,
+            academic_year=self.year,
+        )
+        self.duty = DutyType.objects.create(
+            name="MOD",
+            unique_per_day=True,
+            is_active=True,
+        )
+        StaffDutyAssignment.objects.create(
+            duty_type=self.duty,
+            staff=self.mod,
+            date=self.day,
+            academic_year=self.year,
+        )
+        self.class_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Period 3 VI-A",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.staff,
+        )
+        self.remedial_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.remedial,
+            name="Remedial VI-A",
+            start_time=time(14, 0),
+            end_time=time(14, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.staff,
+        )
+        self.other_class_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Period 3 VI-B",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.other_section,
+            responsible_staff=self.other_staff,
+        )
+        self.house_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Aravali house roll",
+            start_time=time(7, 0),
+            end_time=time(7, 20),
+            audience_kind=AudienceKind.HOUSE,
+            house=self.house,
+            responsible_staff=self.other_staff,
+        )
+        self.other_house_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Nilgiri house roll",
+            start_time=time(7, 0),
+            end_time=time(7, 20),
+            audience_kind=AudienceKind.HOUSE,
+            house=self.other_house,
+            responsible_staff=self.other_staff,
+        )
+        self.school_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Morning school",
+            start_time=time(6, 30),
+            end_time=time(6, 50),
+            audience_kind=AudienceKind.SCHOOL,
+            responsible_staff=self.other_staff,
+        )
+        self.group_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Band practice",
+            start_time=time(16, 0),
+            end_time=time(16, 40),
+            audience_kind=AudienceKind.STUDENT_GROUP,
+            student_group=self.group,
+            responsible_staff=self.other_staff,
+        )
+        ActivitySessionParticipant.objects.create(
+            session=self.group_session,
+            student=self.student_a,
+        )
+        self.selected_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.period,
+            name="Selected coaching",
+            start_time=time(17, 0),
+            end_time=time(17, 20),
+            audience_kind=AudienceKind.SELECTED_STUDENTS,
+            responsible_staff=self.other_staff,
+        )
+        ActivitySessionParticipant.objects.create(
+            session=self.selected_session,
+            student=self.student_b,
+        )
+        self.no_att_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.no_att,
+            name="Silent assembly",
+            start_time=time(8, 0),
+            end_time=time(8, 20),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.staff,
+        )
+        self.old_session = ActivitySession.objects.create(
+            date=date(2025, 8, 28),
+            academic_year=self.other_year,
+            activity_type=self.period,
+            name="Old year period",
+            start_time=time(9, 0),
+            end_time=time(9, 40),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.staff,
+        )
+        AttendanceEntry.objects.create(
+            activity_session=self.class_session,
+            student=self.student_a,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.staff,
+        )
+        AttendanceEntry.objects.create(
+            activity_session=self.remedial_session,
+            student=self.student_a,
+            status=AttendanceStatus.ABSENT,
+            taken_by=self.staff,
+        )
+        AttendanceEntry.objects.create(
+            activity_session=self.class_session,
+            student=self.orphan,
+            status=AttendanceStatus.LEAVE,
+            taken_by=self.staff,
+        )
+        AttendanceEntry.objects.create(
+            activity_session=self.other_class_session,
+            student=self.other_student,
+            status=AttendanceStatus.LATE,
+            taken_by=self.other_staff,
+        )
+        AttendanceEntry.objects.create(
+            activity_session=self.house_session,
+            student=self.student_a,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.other_staff,
+        )
+        AttendanceEntry.objects.create(
+            activity_session=self.school_session,
+            student=self.student_b,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.other_staff,
+        )
+        AttendanceEntry.objects.create(
+            activity_session=self.group_session,
+            student=self.student_a,
+            status=AttendanceStatus.LATE,
+            taken_by=self.other_staff,
+        )
+        AttendanceEntry.objects.create(
+            activity_session=self.selected_session,
+            student=self.student_b,
+            status=AttendanceStatus.LEAVE,
+            taken_by=self.other_staff,
+        )
+        AttendanceEntry.objects.create(
+            activity_session=self.old_session,
+            student=self.student_a,
+            status=AttendanceStatus.LEAVE,
+            taken_by=self.staff,
+        )
+        self.url = reverse("admin:school_activitysession_school_attendance_report")
+        self.overview_url = reverse(
+            "admin:school_activitysession_attendance_overview"
+        )
+        self.range_query = {
+            "academic_year": self.year.pk,
+            "date_from": self.day.isoformat(),
+            "date_to": self.day.isoformat(),
+        }
+
+    def test_administration_sees_all_authorized_attendance_capable_sessions(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(self.url, self.range_query)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Period 3 VI-A")
+        self.assertContains(response, "VI-A")
+        self.assertContains(response, "VI-B")
+        self.assertContains(response, "Aravali")
+        self.assertNotContains(response, "Morning school")
+        self.assertContains(response, "Whole school")
+        self.assertContains(response, "Named student group")
+        self.assertContains(response, "Selected students")
+        self.assertContains(response, "Period")
+        self.assertContains(response, "Remedial")
+        self.assertNotContains(response, "Silent assembly")
+        report = response.context["report"]
+        self.assertEqual(report["total_marked"], 8)
+        self.assertEqual(report["status_counts"][AttendanceStatus.PRESENT], 3)
+        self.assertEqual(report["status_counts"][AttendanceStatus.ABSENT], 1)
+        self.assertEqual(report["status_counts"][AttendanceStatus.LATE], 2)
+        self.assertEqual(report["status_counts"][AttendanceStatus.LEAVE], 2)
+
+    def test_staff_sees_only_sessions_user_may_mark(self):
+        self.client.force_login(self.staff)
+        response = self.client.get(self.url, self.range_query)
+        self.assertEqual(response.status_code, 200)
+        report = response.context["report"]
+        self.assertEqual(report["total_marked"], 3)
+        self.assertContains(response, "VI-A")
+        self.assertNotContains(response, "VI-B")
+        self.assertNotContains(response, "Aravali")
+        self.assertNotContains(response, "Nilgiri")
+
+    def test_staff_cannot_see_another_teachers_attendance_in_totals(self):
+        self.client.force_login(self.staff)
+        report = self.client.get(self.url, self.range_query).context["report"]
+        self.assertEqual(report["status_counts"][AttendanceStatus.LATE], 0)
+        self.assertEqual(report["status_counts"][AttendanceStatus.LEAVE], 1)
+        self.assertEqual(report["status_counts"][AttendanceStatus.PRESENT], 1)
+
+    def test_staff_html_contains_no_unauthorized_student_identities(self):
+        self.client.force_login(self.staff)
+        html = self.client.get(self.url, self.range_query).content.decode()
+        self.assertNotIn("Cara", html)
+        self.assertNotIn("SB1", html)
+        self.assertNotIn("Ada", html)
+        self.assertNotIn("SA1", html)
+        self.assertNotIn("Ora", html)
+        self.assertNotIn("SX1", html)
+        self.assertNotIn("Ben", html)
+
+    def test_staff_with_no_authorized_sessions_gets_empty_report(self):
+        self.client.force_login(self.lonely_staff)
+        response = self.client.get(self.url, self.range_query)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "No authorized attendance-capable sessions in this range.",
+        )
+        report = response.context["report"]
+        self.assertEqual(report["session_count"], 0)
+        self.assertEqual(report["total_marked"], 0)
+        self.assertEqual(report["class_rows"], [])
+        self.assertEqual(report["house_rows"], [])
+        self.assertIsNone(report["percentage"])
+        self.assertContains(response, "N/A")
+        self.assertNotContains(response, "Ada")
+        self.assertNotContains(response, "Cara")
+        self.assertNotContains(response, "VI-A")
+        self.assertNotContains(response, "Aravali")
+
+    def test_unique_mod_sees_sessions_on_mod_date(self):
+        self.client.force_login(self.mod)
+        report = self.client.get(self.url, self.range_query).context["report"]
+        self.assertEqual(report["total_marked"], 8)
+        self.assertTrue(any(row["label"] == "VI-B" for row in report["class_rows"]))
+
+    def test_house_master_sees_assigned_house_sessions(self):
+        self.client.force_login(self.hm)
+        response = self.client.get(self.url, self.range_query)
+        report = response.context["report"]
+        self.assertEqual(report["total_marked"], 1)
+        self.assertEqual(report["status_counts"][AttendanceStatus.PRESENT], 1)
+        self.assertContains(response, "Aravali")
+        self.assertNotContains(response, "VI-A")
+        self.assertNotContains(response, "Nilgiri")
+
+    def test_parent_gets_403(self):
+        self.client.force_login(self.parent)
+        self.assertEqual(self.client.get(self.url, self.range_query).status_code, 403)
+
+    def test_inactive_user_is_blocked(self):
+        self.client.force_login(self.inactive)
+        self.assertIn(
+            self.client.get(self.url, self.range_query).status_code,
+            (302, 403),
+        )
+
+    def test_current_academic_year_is_the_default(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.context["selected_year"], self.year)
+        self.assertEqual(response.context["date_from"], self.year.start_date)
+        self.assertEqual(response.context["date_to"], self.year.end_date)
+
+    def test_latest_start_date_is_fallback_without_current_year(self):
+        self.year.is_current = False
+        self.year.save()
+        self.client.force_login(self.admin_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.context["selected_year"], self.year)
+
+    def test_date_filtering_excludes_outside_range(self):
+        self.client.force_login(self.staff)
+        response = self.client.get(self.url, self.range_query)
+        self.assertEqual(response.context["report"]["status_counts"][AttendanceStatus.LEAVE], 1)
+        old = self.client.get(
+            self.url,
+            {
+                "academic_year": self.other_year.pk,
+                "date_from": self.other_year.start_date.isoformat(),
+                "date_to": self.other_year.end_date.isoformat(),
+            },
+        )
+        self.assertEqual(old.context["report"]["status_counts"][AttendanceStatus.LEAVE], 1)
+        self.assertEqual(old.context["report"]["total_marked"], 1)
+
+    def test_invalid_academic_year_is_empty(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(self.url, {"academic_year": "abc"})
+        self.assertContains(response, "Enter a valid academic year.")
+        self.assertEqual(response.context["report"]["total_marked"], 0)
+        self.assertEqual(response.context["report"]["class_rows"], [])
+
+    def test_invalid_dates_are_empty(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(
+            self.url,
+            {
+                "academic_year": self.year.pk,
+                "date_from": "not-a-date",
+                "date_to": self.day.isoformat(),
+            },
+        )
+        self.assertContains(response, "Enter a valid date.")
+        self.assertEqual(response.context["report"]["total_marked"], 0)
+
+    def test_inverted_date_range_is_empty(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(
+            self.url,
+            {
+                "academic_year": self.year.pk,
+                "date_from": self.later_day.isoformat(),
+                "date_to": self.day.isoformat(),
+            },
+        )
+        self.assertContains(response, "start date must be on or before")
+        self.assertEqual(response.context["report"]["total_marked"], 0)
+        self.assertContains(response, "N/A")
+
+    def test_present_rate_is_pooled_not_averaged(self):
+        report = build_school_attendance_report(
+            [self.class_session, self.other_class_session]
+        )
+        self.assertEqual(report["status_counts"][AttendanceStatus.PRESENT], 1)
+        self.assertEqual(report["total_marked"], 3)
+        self.assertEqual(report["percentage"], 100.0 / 3)
+        class_rates = [row["percentage"] for row in report["class_rows"]]
+        self.assertNotEqual(report["percentage"], sum(class_rates) / len(class_rates))
+        self.client.force_login(self.admin_user)
+        response = self.client.get(self.url, self.range_query)
+        self.assertContains(response, "37.5%")
+
+    def test_zero_marked_percentage_is_na(self):
+        AttendanceEntry.objects.filter(activity_session=self.remedial_session).delete()
+        empty = build_school_attendance_report([self.remedial_session])
+        self.assertEqual(empty["total_marked"], 0)
+        self.assertIsNone(empty["percentage"])
+
+    def test_unmarked_is_not_absent(self):
+        report = build_school_attendance_report([self.class_session])
+        self.assertEqual(report["status_counts"][AttendanceStatus.ABSENT], 0)
+        self.assertEqual(report["eligible_student_sessions"], 2)
+        self.assertEqual(report["marked_on_roster"], 1)
+        self.assertEqual(report["orphan_marks"], 1)
+
+    def test_all_audience_kinds_contribute_to_school_totals(self):
+        report = build_school_attendance_report(
+            [
+                self.class_session,
+                self.house_session,
+                self.school_session,
+                self.group_session,
+                self.selected_session,
+            ]
+        )
+        self.assertEqual(report["total_marked"], 6)
+        kinds = {row["label"] for row in report["audience_kind_rows"]}
+        self.assertEqual(
+            kinds,
+            {
+                "Class section",
+                "House",
+                "Whole school",
+                "Named student group",
+                "Selected students",
+            },
+        )
+
+    def test_non_attendance_sessions_are_excluded_and_period_remedial_included(self):
+        self.client.force_login(self.staff)
+        response = self.client.get(self.url, self.range_query)
+        self.assertNotContains(response, "Silent assembly")
+        self.assertContains(response, "Period")
+        self.assertContains(response, "Remedial")
+        report = response.context["report"]
+        self.assertEqual(report["total_marked"], 3)
+
+    def test_class_breakdown_contains_only_class_sessions(self):
+        report = build_school_attendance_report(
+            [self.class_session, self.house_session, self.school_session]
+        )
+        class_row = report["class_rows"][0]
+        self.assertEqual(class_row["total_marked"], 2)
+        self.assertEqual(class_row["status_counts"][AttendanceStatus.PRESENT], 1)
+        self.assertEqual(class_row["status_counts"][AttendanceStatus.LEAVE], 1)
+        self.assertFalse(any(row["label"] == "Aravali" for row in report["class_rows"]))
+
+    def test_house_breakdown_contains_only_house_sessions(self):
+        report = build_school_attendance_report(
+            [self.class_session, self.house_session]
+        )
+        house_row = report["house_rows"][0]
+        self.assertEqual(house_row["label"], "Aravali (AR)")
+        self.assertEqual(house_row["total_marked"], 1)
+        self.assertEqual(house_row["status_counts"][AttendanceStatus.PRESENT], 1)
+
+    def test_orphan_marks_count_without_exposing_identity(self):
+        self.client.force_login(self.staff)
+        response = self.client.get(self.url, self.range_query)
+        report = response.context["report"]
+        self.assertEqual(report["orphan_marks"], 1)
+        self.assertEqual(report["status_counts"][AttendanceStatus.LEAVE], 1)
+        self.assertNotContains(response, "Ora")
+        self.assertNotContains(response, "SX1")
+
+    def test_class_and_house_report_links_use_same_filters(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(self.url, self.range_query)
+        class_url = reverse(
+            "admin:school_classsection_attendance_report",
+            args=[self.section.pk],
+        )
+        house_url = reverse(
+            "admin:school_house_attendance_report",
+            args=[self.house.pk],
+        )
+        self.assertContains(response, f"{class_url}?academic_year={self.year.pk}")
+        self.assertContains(response, f"date_from={self.day.isoformat()}")
+        self.assertContains(response, f"{house_url}?academic_year={self.year.pk}")
+
+    def test_get_and_post_do_not_write_or_generate(self):
+        self.client.force_login(self.admin_user)
+        before_sessions = ActivitySession.objects.count()
+        before_entries = AttendanceEntry.objects.count()
+        before_days = SchoolCalendarDay.objects.count()
+        self.assertEqual(self.client.get(self.url, self.range_query).status_code, 200)
+        post = self.client.post(self.url, self.range_query)
+        self.assertEqual(post.status_code, 405)
+        self.assertEqual(ActivitySession.objects.count(), before_sessions)
+        self.assertEqual(AttendanceEntry.objects.count(), before_entries)
+        self.assertEqual(SchoolCalendarDay.objects.count(), before_days)
+
+    def test_missing_calendar_day_does_not_generate(self):
+        before_sessions = ActivitySession.objects.count()
+        before_days = SchoolCalendarDay.objects.count()
+        self.client.force_login(self.admin_user)
+        response = self.client.get(self.url, self.range_query)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ActivitySession.objects.count(), before_sessions)
+        self.assertEqual(SchoolCalendarDay.objects.count(), before_days)
+        self.assertFalse(SchoolCalendarDay.objects.filter(date=self.day).exists())
+
+    def test_academic_year_admin_link_includes_year(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(reverse("admin:school_academicyear_changelist"))
+        self.assertContains(response, "School attendance report")
+        self.assertContains(response, f"{self.url}?academic_year={self.year.pk}")
+
+    def test_activity_session_admin_link_works(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(reverse("admin:school_activitysession_changelist"))
+        self.assertContains(response, "School attendance report")
+        self.assertContains(response, self.url)
+
+    def test_daily_overview_link_uses_selected_date(self):
+        SchoolCalendarDay.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            routine=Routine.objects.create(
+                academic_year=self.year,
+                name="Regular",
+                is_active=True,
+            ),
+        )
+        self.client.force_login(self.admin_user)
+        response = self.client.get(
+            self.overview_url, {"date": self.day.isoformat()}
+        )
+        self.assertContains(response, "School attendance report")
+        self.assertContains(response, f"date_from={self.day.isoformat()}")
+        self.assertContains(response, f"date_to={self.day.isoformat()}")
+        self.assertContains(response, f"academic_year={self.year.pk}")
+
 
