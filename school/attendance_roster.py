@@ -337,9 +337,8 @@ def present_rate(present_count, marked_count):
     return (100.0 * present_count) / marked_count
 
 
-def build_class_attendance_report(class_section, academic_year, sessions):
-    """Read-only class report over authorized class sessions."""
-    empty = {
+def _empty_attendance_report():
+    return {
         "roster_size": 0,
         "students_with_marks": 0,
         "students_with_no_marks": 0,
@@ -348,17 +347,13 @@ def build_class_attendance_report(class_section, academic_year, sessions):
         "percentage": None,
         "student_rows": [],
     }
-    if class_section is None or academic_year is None:
-        return empty
 
+
+def _report_from_roster_and_sessions(roster_students, sessions):
     sessions = list(sessions)
-    roster_students = list(
-        Student.objects.filter(
-            class_section=class_section,
-            academic_year=academic_year,
-            is_active=True,
-        ).order_by("roll_number", "last_name", "first_name", "admission_number")
-    )
+    if not sessions:
+        return _empty_attendance_report()
+    roster_students = list(roster_students)
     roster_id_set = {student.pk for student in roster_students}
     roster_by_session = roster_student_ids_by_session(sessions)
 
@@ -436,3 +431,36 @@ def build_class_attendance_report(class_section, academic_year, sessions):
         "percentage": present_rate(total_present, total_marked),
         "student_rows": student_rows,
     }
+
+
+def build_class_attendance_report(class_section, academic_year, sessions):
+    """Read-only class report over authorized class sessions."""
+    if class_section is None or academic_year is None:
+        return _empty_attendance_report()
+    sessions = list(sessions)
+    if not sessions:
+        return _empty_attendance_report()
+    roster_students = Student.objects.filter(
+        class_section=class_section,
+        academic_year=academic_year,
+        is_active=True,
+    ).order_by("roll_number", "last_name", "first_name", "admission_number")
+    return _report_from_roster_and_sessions(roster_students, sessions)
+
+
+def build_house_attendance_report(house, academic_year, sessions):
+    """Read-only house report over authorized house sessions."""
+    if house is None or academic_year is None:
+        return _empty_attendance_report()
+    sessions = list(sessions)
+    if not sessions:
+        return _empty_attendance_report()
+    member_ids = StudentHouseMembership.objects.filter(
+        house=house,
+        academic_year=academic_year,
+    ).values_list("student_id", flat=True)
+    roster_students = Student.objects.filter(
+        pk__in=member_ids,
+        is_active=True,
+    ).order_by("roll_number", "last_name", "first_name", "admission_number")
+    return _report_from_roster_and_sessions(roster_students, sessions)
