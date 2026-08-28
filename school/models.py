@@ -133,6 +133,19 @@ class Student(models.Model):
         parts = [self.first_name, self.middle_name, self.last_name]
         return " ".join(part for part in parts if part)
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self._sync_class_membership()
+
+    def _sync_class_membership(self):
+        if not self.pk or not self.class_section_id or not self.academic_year_id:
+            return
+        StudentClassMembership.objects.update_or_create(
+            student_id=self.pk,
+            academic_year_id=self.academic_year_id,
+            defaults={"class_section_id": self.class_section_id},
+        )
+
     def __str__(self):
         return f"{self.full_name} ({self.admission_number})"
 
@@ -252,6 +265,43 @@ class StudentHouseMembership(models.Model):
 
     def __str__(self):
         return f"{self.student} — {self.house} ({self.academic_year})"
+
+
+class StudentClassMembership(models.Model):
+    """A student's class section for one academic year. History is kept across years."""
+
+    student = models.ForeignKey(
+        Student,
+        on_delete=models.PROTECT,
+        related_name="class_memberships",
+    )
+    class_section = models.ForeignKey(
+        ClassSection,
+        on_delete=models.PROTECT,
+        related_name="memberships",
+    )
+    academic_year = models.ForeignKey(
+        AcademicYear,
+        on_delete=models.PROTECT,
+        related_name="class_memberships",
+    )
+
+    class Meta:
+        ordering = ["-academic_year", "class_section", "student"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["student", "academic_year"],
+                name="unique_student_class_per_year",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["academic_year", "class_section"]),
+        ]
+        verbose_name = "student class membership"
+        verbose_name_plural = "student class memberships"
+
+    def __str__(self):
+        return f"{self.student} — {self.class_section} ({self.academic_year})"
 
 
 class TeachingAssignment(models.Model):

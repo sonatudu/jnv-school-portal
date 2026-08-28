@@ -34,6 +34,7 @@ from .models import (
     Student,
     StudentGroup,
     StudentGroupMembership,
+    StudentClassMembership,
     StudentHouseMembership,
     Subject,
     TeacherProfile,
@@ -231,6 +232,14 @@ class SubjectAdmin(admin.ModelAdmin):
     search_fields = ("name", "code")
 
 
+class StudentClassMembershipInline(admin.TabularInline):
+    model = StudentClassMembership
+    extra = 0
+    autocomplete_fields = ("class_section", "academic_year")
+    verbose_name = "class placement"
+    verbose_name_plural = "class placement history"
+
+
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
     list_display = (
@@ -253,6 +262,7 @@ class StudentAdmin(admin.ModelAdmin):
     )
     autocomplete_fields = ("class_section", "academic_year")
     list_select_related = ("class_section", "academic_year")
+    inlines = (StudentClassMembershipInline,)
     list_per_page = 50
 
     def changelist_view(self, request, extra_context=None):
@@ -609,6 +619,24 @@ class StudentHouseMembershipAdmin(admin.ModelAdmin):
     autocomplete_fields = ("student", "house", "academic_year")
     list_select_related = ("student", "house", "academic_year")
     ordering = ("-academic_year", "house", "student")
+    list_per_page = 50
+
+
+@admin.register(StudentClassMembership)
+class StudentClassMembershipAdmin(admin.ModelAdmin):
+    list_display = ("student", "class_section", "academic_year")
+    list_filter = ("academic_year", "class_section")
+    search_fields = (
+        "student__admission_number",
+        "student__first_name",
+        "student__last_name",
+        "class_section__display_name",
+        "class_section__grade_name",
+        "class_section__section_name",
+    )
+    autocomplete_fields = ("student", "class_section", "academic_year")
+    list_select_related = ("student", "class_section", "academic_year")
+    ordering = ("-academic_year", "class_section", "student")
     list_per_page = 50
 
 
