@@ -1052,10 +1052,19 @@ class AttendanceEntry(models.Model):
             models.Index(fields=["student", "activity_session"]),
             models.Index(fields=["status"]),
         ]
+        permissions = [
+            ("correct_attendance", "Can correct attendance"),
+        ]
 
     def clean(self):
         super().clean()
         errors = {}
+        if self.activity_session_id:
+            session = self.activity_session
+            if session.activity_type_id and not session.activity_type.takes_attendance:
+                errors["activity_session"] = (
+                    "Attendance cannot be recorded for an activity that does not take attendance."
+                )
         if self.taken_by_id and self.taken_by.category not in _ATTENDANCE_ACTOR_CATEGORIES:
             errors["taken_by"] = (
                 "Attendance must be taken by a Staff user "

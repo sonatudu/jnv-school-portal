@@ -1,5 +1,6 @@
 from django import forms
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 
 from .models import (
     AcademicYear,
@@ -550,22 +551,79 @@ class AttendanceEntryAdmin(admin.ModelAdmin):
         "student__last_name",
         "activity_session__name",
     )
-    autocomplete_fields = ("activity_session", "student", "taken_by", "updated_by")
-    list_select_related = ("student", "activity_session", "taken_by", "updated_by")
+    autocomplete_fields = ("student", "taken_by", "updated_by")
+    list_select_related = (
+        "student",
+        "activity_session__activity_type",
+        "activity_session__responsible_staff",
+        "taken_by",
+        "updated_by",
+    )
     inlines = (AttendanceRevisionInline,)
     list_per_page = 50
 
+    def get_exclude(self, request, obj=None):
+        if obj is None:
+            return ("taken_by", "taken_at")
+        return ()
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj:
+            return ("taken_by", "taken_at")
+        return ()
+
+    def get_queryset(self, request):
+        from .attendance_auth import sessions_user_may_mark
+
+        qs = super().get_queryset(request)
+        return qs.filter(activity_session__in=sessions_user_may_mark(request.user))
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        from .attendance_auth import sessions_user_may_mark
+
+        if db_field.name == "activity_session":
+            kwargs["queryset"] = sessions_user_may_mark(request.user)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def has_change_permission(self, request, obj=None):
+        if not super().has_change_permission(request, obj):
+            return False
+        if obj is None:
+            return True
+        from .attendance_auth import can_change_attendance_status
+
+        return can_change_attendance_status(request.user, obj.activity_session)
+
+    def has_delete_permission(self, request, obj=None):
+        if not super().has_delete_permission(request, obj):
+            return False
+        if request.user.category != UserCategory.ADMINISTRATION:
+            return False
+        if obj is None:
+            return True
+        from .attendance_auth import can_change_attendance_status
+
+        return can_change_attendance_status(request.user, obj.activity_session)
+
     def save_model(self, request, obj, form, change):
-        if change:
-            previous_status = (
-                AttendanceEntry.objects.filter(pk=obj.pk)
-                .values_list("status", flat=True)
-                .first()
-            )
-            if previous_status is not None and previous_status != obj.status:
+        from .attendance_auth import can_change_attendance_status, can_take_attendance
+
+        session = obj.activity_session
+        if not change:
+            if not can_take_attendance(request.user, session):
+                raise PermissionDenied
+            obj.taken_by = request.user
+        else:
+            stored = AttendanceEntry.objects.get(pk=obj.pk)
+            obj.taken_by = stored.taken_by
+            obj.taken_at = stored.taken_at
+            if stored.status != obj.status:
+                if not can_change_attendance_status(request.user, session):
+                    raise PermissionDenied
                 obj._status_change_reason = form.cleaned_data.get("change_reason", "")
-                if not obj.updated_by_id:
-                    obj.updated_by = request.user
+                obj.updated_by = request.user
+            elif not can_take_attendance(request.user, session):
+                raise PermissionDenied
         super().save_model(request, obj, form, change)
 
 
@@ -586,3 +644,15 @@ class AttendanceRevisionAdmin(admin.ModelAdmin):
     list_select_related = ("entry", "changed_by", "entry__student")
     readonly_fields = ("entry", "old_status", "new_status", "changed_by", "changed_at")
     ordering = ("-changed_at",)
+
+    def get_queryset(self, request):
+        from .attendance_auth import sessions_user_may_mark
+
+        qs = super().get_queryset(request)
+        return qs.filter(entry__activity_session__in=sessions_user_may_mark(request.user))
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
