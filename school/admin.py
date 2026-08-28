@@ -51,10 +51,150 @@ class AcademicYearAdmin(admin.ModelAdmin):
 
 @admin.register(ClassSection)
 class ClassSectionAdmin(admin.ModelAdmin):
-    list_display = ("display_name", "grade_name", "section_name", "is_active")
+    list_display = (
+        "display_name",
+        "grade_name",
+        "section_name",
+        "is_active",
+        "attendance_report_link",
+    )
     list_filter = ("is_active", "grade_name")
     search_fields = ("display_name", "grade_name", "section_name")
     ordering = ("grade_name", "section_name")
+
+    def get_urls(self):
+        extra = [
+            path(
+                "<int:object_id>/attendance-report/",
+                self.admin_site.admin_view(self.attendance_report_view),
+                name="school_classsection_attendance_report",
+            ),
+        ]
+        return extra + super().get_urls()
+
+    @admin.display(description="Attendance")
+    def attendance_report_link(self, obj):
+        url = reverse("admin:school_classsection_attendance_report", args=[obj.pk])
+        return format_html('<a href="{}">Attendance report</a>', url)
+
+    def _forbidden_report(self, request, message):
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Class attendance report",
+            "message": message,
+            "opts": self.model._meta,
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/activitysession/mark_attendance_denied.html",
+            context,
+            status=403,
+        )
+
+    def _format_present_rate(self, percentage):
+        if percentage is None:
+            return "N/A"
+        return f"{percentage:.1f}".rstrip("0").rstrip(".") + "%"
+
+    def attendance_report_view(self, request, object_id):
+        from .attendance_auth import sessions_user_may_mark
+        from .attendance_roster import build_class_attendance_report
+
+        user = request.user
+        if (
+            not user.is_authenticated
+            or not user.is_active
+            or user.category == UserCategory.PARENT
+        ):
+            return self._forbidden_report(
+                request,
+                "You are not authorized to view the class attendance report.",
+            )
+
+        class_section = ClassSection.objects.filter(pk=object_id).first()
+        if class_section is None:
+            raise Http404("Class section not found.")
+
+        years = list(AcademicYear.objects.order_by("-start_date"))
+        notice = ""
+        selected_year = AcademicYear.objects.filter(is_current=True).first()
+        if selected_year is None:
+            selected_year = years[0] if years else None
+
+        raw_year = request.GET.get("academic_year")
+        if raw_year:
+            try:
+                selected_year = AcademicYear.objects.get(pk=int(raw_year))
+            except (AcademicYear.DoesNotExist, TypeError, ValueError):
+                notice = "Enter a valid academic year."
+                selected_year = None
+
+        date_from = selected_year.start_date if selected_year else None
+        date_to = selected_year.end_date if selected_year else None
+        raw_from = request.GET.get("date_from")
+        raw_to = request.GET.get("date_to")
+        if raw_from:
+            try:
+                date_from = date.fromisoformat(raw_from)
+            except ValueError:
+                notice = "Enter a valid start date."
+                date_from = None
+        if raw_to:
+            try:
+                date_to = date.fromisoformat(raw_to)
+            except ValueError:
+                notice = "Enter a valid end date."
+                date_to = None
+        if date_from and date_to and date_from > date_to:
+            notice = "The start date must be on or before the end date."
+            date_from = None
+            date_to = None
+
+        report = build_class_attendance_report(class_section, selected_year, [])
+        if selected_year and date_from and date_to:
+            sessions = (
+                sessions_user_may_mark(user)
+                .filter(
+                    audience_kind=AudienceKind.CLASS,
+                    class_section=class_section,
+                    academic_year=selected_year,
+                    date__gte=date_from,
+                    date__lte=date_to,
+                )
+                .select_related("activity_type", "class_section")
+                .order_by("date", "start_time", "name")
+            )
+            report = build_class_attendance_report(
+                class_section,
+                selected_year,
+                sessions,
+            )
+
+        for row in report["student_rows"]:
+            row["percentage_display"] = self._format_present_rate(row["percentage"])
+            row["history_url"] = reverse(
+                "admin:school_student_attendance_history",
+                args=[row["student"].pk],
+            )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Attendance report: {class_section}",
+            "opts": self.model._meta,
+            "class_section": class_section,
+            "years": years,
+            "selected_year": selected_year,
+            "date_from": date_from,
+            "date_to": date_to,
+            "notice": notice,
+            "report": report,
+            "percentage_display": self._format_present_rate(report["percentage"]),
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/classsection/attendance_report.html",
+            context,
+        )
 
 
 @admin.register(Subject)

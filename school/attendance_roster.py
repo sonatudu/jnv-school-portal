@@ -324,3 +324,115 @@ def build_student_attendance_history(student, sessions):
         "total_eligible": total_eligible,
         "percentage": percentage,
     }
+
+
+def _empty_status_counts():
+    return {value: 0 for value, _label in AttendanceStatus.choices}
+
+
+def present_rate(present_count, marked_count):
+    """Present / Marked × 100, or None when there are no marks."""
+    if not marked_count:
+        return None
+    return (100.0 * present_count) / marked_count
+
+
+def build_class_attendance_report(class_section, academic_year, sessions):
+    """Read-only class report over authorized class sessions."""
+    empty = {
+        "roster_size": 0,
+        "students_with_marks": 0,
+        "students_with_no_marks": 0,
+        "status_counts": _empty_status_counts(),
+        "total_marked": 0,
+        "percentage": None,
+        "student_rows": [],
+    }
+    if class_section is None or academic_year is None:
+        return empty
+
+    sessions = list(sessions)
+    roster_students = list(
+        Student.objects.filter(
+            class_section=class_section,
+            academic_year=academic_year,
+            is_active=True,
+        ).order_by("roll_number", "last_name", "first_name", "admission_number")
+    )
+    roster_id_set = {student.pk for student in roster_students}
+    roster_by_session = roster_student_ids_by_session(sessions)
+
+    entries = []
+    if sessions:
+        entries = list(
+            AttendanceEntry.objects.filter(
+                activity_session_id__in=[session.pk for session in sessions],
+            ).select_related("student")
+        )
+
+    entries_by_student = defaultdict(list)
+    extra_ids = set()
+    for entry in entries:
+        entries_by_student[entry.student_id].append(entry)
+        if entry.student_id not in roster_id_set:
+            extra_ids.add(entry.student_id)
+
+    extra_students = []
+    if extra_ids:
+        extra_students = list(
+            Student.objects.filter(pk__in=extra_ids).order_by(
+                "last_name",
+                "first_name",
+                "admission_number",
+            )
+        )
+
+    student_rows = []
+    for student in roster_students + extra_students:
+        on_roster_sessions = {
+            session_id
+            for session_id, student_ids in roster_by_session.items()
+            if student.pk in student_ids
+        }
+        student_entries = entries_by_student.get(student.pk, [])
+        marked_session_ids = {entry.activity_session_id for entry in student_entries}
+        eligible_ids = on_roster_sessions | marked_session_ids
+        counts = _empty_status_counts()
+        for entry in student_entries:
+            counts[entry.status] = counts.get(entry.status, 0) + 1
+        marked = len(student_entries)
+        present = counts.get(AttendanceStatus.PRESENT, 0)
+        student_rows.append(
+            {
+                "student": student,
+                "on_current_roster": student.pk in roster_id_set,
+                "eligible": len(eligible_ids),
+                "marked": marked,
+                "unmarked": len(eligible_ids) - marked,
+                "present": present,
+                "absent": counts.get(AttendanceStatus.ABSENT, 0),
+                "late": counts.get(AttendanceStatus.LATE, 0),
+                "leave": counts.get(AttendanceStatus.LEAVE, 0),
+                "percentage": present_rate(present, marked),
+            }
+        )
+
+    totals = _empty_status_counts()
+    for entry in entries:
+        totals[entry.status] = totals.get(entry.status, 0) + 1
+    total_marked = len(entries)
+    total_present = totals.get(AttendanceStatus.PRESENT, 0)
+
+    return {
+        "roster_size": len(roster_students),
+        "students_with_marks": sum(1 for row in student_rows if row["marked"]),
+        "students_with_no_marks": sum(
+            1
+            for row in student_rows
+            if row["on_current_roster"] and row["marked"] == 0
+        ),
+        "status_counts": totals,
+        "total_marked": total_marked,
+        "percentage": present_rate(total_present, total_marked),
+        "student_rows": student_rows,
+    }
