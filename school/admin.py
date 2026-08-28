@@ -1,13 +1,27 @@
+from django import forms
 from django.contrib import admin
 
 from .models import (
     AcademicYear,
+    ActivitySession,
+    ActivitySessionParticipant,
+    ActivityType,
+    AttendanceEntry,
+    AttendanceRevision,
     ClassSection,
     ClassTeacherAssignment,
+    ClassTimetableEntry,
+    DutyType,
     House,
     HouseMasterAssignment,
     ParentProfile,
+    Routine,
+    RoutineSlot,
+    SchoolCalendarDay,
+    StaffDutyAssignment,
     Student,
+    StudentGroup,
+    StudentGroupMembership,
     StudentHouseMembership,
     Subject,
     TeacherProfile,
@@ -171,3 +185,274 @@ class HouseMasterAssignmentAdmin(admin.ModelAdmin):
     @admin.display(description="Designation")
     def staff_designation(self, obj):
         return obj.staff.designation
+
+
+class StudentGroupMembershipInline(admin.TabularInline):
+    model = StudentGroupMembership
+    extra = 1
+    autocomplete_fields = ("student",)
+
+
+class ActivitySessionParticipantInline(admin.TabularInline):
+    model = ActivitySessionParticipant
+    extra = 1
+    autocomplete_fields = ("student",)
+
+
+class AttendanceRevisionInline(admin.TabularInline):
+    model = AttendanceRevision
+    extra = 0
+    can_delete = False
+    readonly_fields = ("old_status", "new_status", "changed_by", "changed_at", "reason")
+    fields = ("old_status", "new_status", "changed_by", "changed_at", "reason")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+class AttendanceEntryAdminForm(forms.ModelForm):
+    change_reason = forms.CharField(
+        required=False,
+        help_text="Optional reason stored on the revision if status changes.",
+    )
+
+    class Meta:
+        model = AttendanceEntry
+        fields = "__all__"
+
+
+@admin.register(ActivityType)
+class ActivityTypeAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "code",
+        "default_audience_kind",
+        "requires_subject",
+        "takes_attendance",
+        "is_active",
+    )
+    list_filter = ("is_active", "requires_subject", "takes_attendance", "default_audience_kind")
+    search_fields = ("name", "code")
+    ordering = ("name",)
+
+
+@admin.register(DutyType)
+class DutyTypeAdmin(admin.ModelAdmin):
+    list_display = ("name", "code", "unique_per_day", "is_active")
+    list_filter = ("is_active", "unique_per_day")
+    search_fields = ("name", "code")
+    ordering = ("name",)
+
+
+@admin.register(Routine)
+class RoutineAdmin(admin.ModelAdmin):
+    list_display = ("name", "academic_year", "is_active")
+    list_filter = ("academic_year", "is_active")
+    search_fields = ("name",)
+    autocomplete_fields = ("academic_year",)
+    ordering = ("academic_year", "name")
+
+
+@admin.register(RoutineSlot)
+class RoutineSlotAdmin(admin.ModelAdmin):
+    list_display = ("name", "routine", "activity_type", "start_time", "end_time", "sort_order")
+    list_filter = ("routine", "activity_type")
+    search_fields = ("name", "routine__name", "activity_type__name")
+    autocomplete_fields = ("routine", "activity_type")
+    ordering = ("routine", "sort_order")
+
+
+@admin.register(SchoolCalendarDay)
+class SchoolCalendarDayAdmin(admin.ModelAdmin):
+    list_display = ("date", "academic_year", "routine", "note")
+    list_filter = ("academic_year", "routine")
+    search_fields = ("note", "routine__name")
+    autocomplete_fields = ("academic_year", "routine")
+    ordering = ("-date",)
+
+
+@admin.register(ClassTimetableEntry)
+class ClassTimetableEntryAdmin(admin.ModelAdmin):
+    list_display = ("class_section", "routine_slot", "subject", "teacher", "academic_year")
+    list_filter = ("academic_year", "class_section", "subject")
+    search_fields = (
+        "class_section__display_name",
+        "subject__name",
+        "teacher__user__username",
+        "teacher__user__first_name",
+        "teacher__user__last_name",
+        "routine_slot__name",
+    )
+    autocomplete_fields = (
+        "academic_year",
+        "class_section",
+        "routine_slot",
+        "subject",
+        "teacher",
+    )
+    list_select_related = (
+        "academic_year",
+        "class_section",
+        "routine_slot",
+        "subject",
+        "teacher__user",
+    )
+
+
+@admin.register(StudentGroup)
+class StudentGroupAdmin(admin.ModelAdmin):
+    list_display = ("name", "academic_year", "is_active")
+    list_filter = ("academic_year", "is_active")
+    search_fields = ("name",)
+    autocomplete_fields = ("academic_year",)
+    inlines = (StudentGroupMembershipInline,)
+
+
+@admin.register(StudentGroupMembership)
+class StudentGroupMembershipAdmin(admin.ModelAdmin):
+    list_display = ("group", "student")
+    list_filter = ("group__academic_year", "group")
+    search_fields = (
+        "group__name",
+        "student__admission_number",
+        "student__first_name",
+        "student__last_name",
+    )
+    autocomplete_fields = ("group", "student")
+    list_select_related = ("group", "student")
+
+
+@admin.register(ActivitySession)
+class ActivitySessionAdmin(admin.ModelAdmin):
+    list_display = (
+        "date",
+        "name",
+        "activity_type",
+        "audience_kind",
+        "class_section",
+        "house",
+        "student_group",
+        "subject",
+        "responsible_staff",
+        "start_time",
+        "end_time",
+    )
+    list_filter = ("academic_year", "activity_type", "audience_kind", "date")
+    search_fields = (
+        "name",
+        "responsible_staff__username",
+        "responsible_staff__first_name",
+        "responsible_staff__last_name",
+        "class_section__display_name",
+        "house__name",
+        "student_group__name",
+        "subject__name",
+    )
+    autocomplete_fields = (
+        "academic_year",
+        "routine_slot",
+        "activity_type",
+        "class_section",
+        "house",
+        "student_group",
+        "subject",
+        "responsible_staff",
+        "teaching_assignment",
+    )
+    list_select_related = (
+        "academic_year",
+        "activity_type",
+        "class_section",
+        "house",
+        "student_group",
+        "subject",
+        "responsible_staff",
+        "routine_slot",
+    )
+    inlines = (ActivitySessionParticipantInline,)
+    ordering = ("-date", "start_time")
+    list_per_page = 50
+
+
+@admin.register(ActivitySessionParticipant)
+class ActivitySessionParticipantAdmin(admin.ModelAdmin):
+    list_display = ("session", "student")
+    search_fields = (
+        "student__admission_number",
+        "student__first_name",
+        "student__last_name",
+        "session__name",
+    )
+    autocomplete_fields = ("session", "student")
+    list_select_related = ("session", "student")
+
+
+@admin.register(StaffDutyAssignment)
+class StaffDutyAssignmentAdmin(admin.ModelAdmin):
+    list_display = ("date", "duty_type", "staff", "academic_year")
+    list_filter = ("academic_year", "duty_type", "date")
+    search_fields = (
+        "staff__username",
+        "staff__first_name",
+        "staff__last_name",
+        "duty_type__name",
+    )
+    autocomplete_fields = ("duty_type", "staff", "academic_year")
+    list_select_related = ("duty_type", "staff", "academic_year")
+    ordering = ("-date",)
+
+
+class AttendanceEntryAdmin(admin.ModelAdmin):
+    form = AttendanceEntryAdminForm
+    list_display = (
+        "student",
+        "activity_session",
+        "status",
+        "taken_by",
+        "taken_at",
+        "updated_by",
+        "updated_at",
+    )
+    list_filter = ("status", "activity_session__date", "activity_session__activity_type")
+    search_fields = (
+        "student__admission_number",
+        "student__first_name",
+        "student__last_name",
+        "activity_session__name",
+    )
+    autocomplete_fields = ("activity_session", "student", "taken_by", "updated_by")
+    list_select_related = ("student", "activity_session", "taken_by", "updated_by")
+    inlines = (AttendanceRevisionInline,)
+    list_per_page = 50
+
+    def save_model(self, request, obj, form, change):
+        if change:
+            previous_status = (
+                AttendanceEntry.objects.filter(pk=obj.pk)
+                .values_list("status", flat=True)
+                .first()
+            )
+            if previous_status is not None and previous_status != obj.status:
+                obj._status_change_reason = form.cleaned_data.get("change_reason", "")
+                if not obj.updated_by_id:
+                    obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+admin.site.register(AttendanceEntry, AttendanceEntryAdmin)
+
+
+@admin.register(AttendanceRevision)
+class AttendanceRevisionAdmin(admin.ModelAdmin):
+    list_display = ("entry", "old_status", "new_status", "changed_by", "changed_at", "reason")
+    list_filter = ("old_status", "new_status", "changed_at")
+    search_fields = (
+        "entry__student__admission_number",
+        "entry__student__first_name",
+        "entry__student__last_name",
+        "reason",
+    )
+    autocomplete_fields = ("entry", "changed_by")
+    list_select_related = ("entry", "changed_by", "entry__student")
+    readonly_fields = ("entry", "old_status", "new_status", "changed_by", "changed_at")
+    ordering = ("-changed_at",)

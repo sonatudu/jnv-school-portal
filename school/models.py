@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
+from django.utils import timezone
 
 from accounts.models import UserCategory
 
@@ -410,3 +411,695 @@ class HouseMasterAssignment(models.Model):
 
     def __str__(self):
         return f"{self.staff} — {self.house} ({self.academic_year})"
+
+
+class AudienceKind(models.TextChoices):
+    CLASS = "class", "Class section"
+    HOUSE = "house", "House"
+    SCHOOL = "school", "Whole school"
+    STUDENT_GROUP = "student_group", "Named student group"
+    SELECTED_STUDENTS = "selected_students", "Selected students"
+
+
+class AttendanceStatus(models.TextChoices):
+    PRESENT = "present", "Present"
+    ABSENT = "absent", "Absent"
+    LATE = "late", "Late"
+    LEAVE = "leave", "Leave"
+
+
+_ATTENDANCE_ACTOR_CATEGORIES = (UserCategory.STAFF, UserCategory.ADMINISTRATION)
+_ATTENDANCE_ACTOR_LIMIT = {"category__in": list(_ATTENDANCE_ACTOR_CATEGORIES)}
+
+
+class ActivityType(models.Model):
+    name = models.CharField(max_length=80, unique=True)
+    code = models.CharField(max_length=20, blank=True)
+    default_audience_kind = models.CharField(
+        max_length=32,
+        choices=AudienceKind.choices,
+        blank=True,
+        help_text="Optional hint only. Sessions may use a different audience kind.",
+    )
+    requires_subject = models.BooleanField(default=False)
+    takes_attendance = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class DutyType(models.Model):
+    name = models.CharField(max_length=80, unique=True)
+    code = models.CharField(max_length=20, blank=True)
+    unique_per_day = models.BooleanField(
+        default=False,
+        help_text="If set, only one staff member may hold this duty on a given date (e.g. MOD).",
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Routine(models.Model):
+    academic_year = models.ForeignKey(
+        AcademicYear,
+        on_delete=models.PROTECT,
+        related_name="routines",
+    )
+    name = models.CharField(max_length=80)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["academic_year", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["academic_year", "name"],
+                name="unique_routine_name_per_year",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.academic_year})"
+
+
+class RoutineSlot(models.Model):
+    routine = models.ForeignKey(
+        Routine,
+        on_delete=models.PROTECT,
+        related_name="slots",
+    )
+    activity_type = models.ForeignKey(
+        ActivityType,
+        on_delete=models.PROTECT,
+        related_name="routine_slots",
+    )
+    name = models.CharField(max_length=80, help_text='Example: "Period 1" or "Remedial"')
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    sort_order = models.PositiveSmallIntegerField()
+
+    class Meta:
+        ordering = ["routine", "sort_order", "start_time"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["routine", "sort_order"],
+                name="unique_slot_order_per_routine",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_time__gt=models.F("start_time")),
+                name="routine_slot_end_after_start",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["routine", "start_time"]),
+        ]
+
+    def __str__(self):
+        return f"{self.routine}: {self.name}"
+
+
+class SchoolCalendarDay(models.Model):
+    date = models.DateField(unique=True)
+    academic_year = models.ForeignKey(
+        AcademicYear,
+        on_delete=models.PROTECT,
+        related_name="calendar_days",
+    )
+    routine = models.ForeignKey(
+        Routine,
+        on_delete=models.PROTECT,
+        related_name="calendar_days",
+    )
+    note = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["-date"]
+        indexes = [
+            models.Index(fields=["academic_year", "date"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.academic_year_id and self.date:
+            year = self.academic_year
+            if self.date < year.start_date or self.date > year.end_date:
+                raise ValidationError(
+                    {"date": "Date must fall within the selected academic year."}
+                )
+        if (
+            self.routine_id
+            and self.academic_year_id
+            and self.routine.academic_year_id != self.academic_year_id
+        ):
+            raise ValidationError(
+                {"routine": "Routine must belong to the same academic year."}
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.date} — {self.routine}"
+
+
+class ClassTimetableEntry(models.Model):
+    academic_year = models.ForeignKey(
+        AcademicYear,
+        on_delete=models.PROTECT,
+        related_name="timetable_entries",
+    )
+    class_section = models.ForeignKey(
+        ClassSection,
+        on_delete=models.PROTECT,
+        related_name="timetable_entries",
+    )
+    routine_slot = models.ForeignKey(
+        RoutineSlot,
+        on_delete=models.PROTECT,
+        related_name="timetable_entries",
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        related_name="timetable_entries",
+    )
+    teacher = models.ForeignKey(
+        TeacherProfile,
+        on_delete=models.PROTECT,
+        related_name="timetable_entries",
+    )
+
+    class Meta:
+        ordering = ["academic_year", "class_section", "routine_slot"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["class_section", "routine_slot"],
+                name="unique_timetable_entry_per_class_slot",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["academic_year", "class_section"]),
+            models.Index(fields=["teacher"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        if (
+            self.routine_slot_id
+            and self.academic_year_id
+            and self.routine_slot.routine.academic_year_id != self.academic_year_id
+        ):
+            raise ValidationError(
+                {"routine_slot": "Routine slot must belong to the same academic year."}
+            )
+        if self.teacher_id and self.teacher.user.category != UserCategory.STAFF:
+            raise ValidationError(
+                {"teacher": "Timetable entries require a Staff teacher profile."}
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return (
+            f"{self.class_section} — {self.routine_slot.name} — {self.subject} "
+            f"({self.academic_year})"
+        )
+
+
+class StudentGroup(models.Model):
+    """Named custom group (e.g. a recurring remedial set), not a class or house."""
+
+    academic_year = models.ForeignKey(
+        AcademicYear,
+        on_delete=models.PROTECT,
+        related_name="student_groups",
+    )
+    name = models.CharField(max_length=80)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["academic_year", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["academic_year", "name"],
+                name="unique_student_group_per_year",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.academic_year})"
+
+
+class StudentGroupMembership(models.Model):
+    group = models.ForeignKey(
+        StudentGroup,
+        on_delete=models.PROTECT,
+        related_name="memberships",
+    )
+    student = models.ForeignKey(
+        Student,
+        on_delete=models.PROTECT,
+        related_name="group_memberships",
+    )
+
+    class Meta:
+        ordering = ["group", "student"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["group", "student"],
+                name="unique_student_in_group",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.student} — {self.group}"
+
+
+class ActivitySession(models.Model):
+    """A date-specific occurrence of an activity for one target group.
+
+    Audience is not limited to class/house/school: named groups and selected
+    students are supported, and further kinds can be added later.
+    Staff and times are snapshotted so later assignment changes do not rewrite history.
+    """
+
+    date = models.DateField()
+    academic_year = models.ForeignKey(
+        AcademicYear,
+        on_delete=models.PROTECT,
+        related_name="activity_sessions",
+    )
+    routine_slot = models.ForeignKey(
+        RoutineSlot,
+        on_delete=models.PROTECT,
+        related_name="sessions",
+        null=True,
+        blank=True,
+    )
+    activity_type = models.ForeignKey(
+        ActivityType,
+        on_delete=models.PROTECT,
+        related_name="sessions",
+    )
+    name = models.CharField(max_length=80)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    audience_kind = models.CharField(max_length=32, choices=AudienceKind.choices)
+    class_section = models.ForeignKey(
+        ClassSection,
+        on_delete=models.PROTECT,
+        related_name="activity_sessions",
+        null=True,
+        blank=True,
+    )
+    house = models.ForeignKey(
+        House,
+        on_delete=models.PROTECT,
+        related_name="activity_sessions",
+        null=True,
+        blank=True,
+    )
+    student_group = models.ForeignKey(
+        StudentGroup,
+        on_delete=models.PROTECT,
+        related_name="activity_sessions",
+        null=True,
+        blank=True,
+    )
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.PROTECT,
+        related_name="activity_sessions",
+        null=True,
+        blank=True,
+    )
+    responsible_staff = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="responsible_activity_sessions",
+        limit_choices_to={"category": UserCategory.STAFF},
+    )
+    teaching_assignment = models.ForeignKey(
+        TeachingAssignment,
+        on_delete=models.PROTECT,
+        related_name="activity_sessions",
+        null=True,
+        blank=True,
+        help_text="Optional hint only. Historical staff is responsible_staff.",
+    )
+
+    class Meta:
+        ordering = ["-date", "start_time", "name"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_time__gt=models.F("start_time")),
+                name="activity_session_end_after_start",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        class_section__isnull=False,
+                        house__isnull=True,
+                        student_group__isnull=True,
+                    )
+                    | models.Q(
+                        class_section__isnull=True,
+                        house__isnull=False,
+                        student_group__isnull=True,
+                    )
+                    | models.Q(
+                        class_section__isnull=True,
+                        house__isnull=True,
+                        student_group__isnull=False,
+                    )
+                    | models.Q(
+                        class_section__isnull=True,
+                        house__isnull=True,
+                        student_group__isnull=True,
+                    )
+                ),
+                name="activity_session_at_most_one_target",
+            ),
+            models.UniqueConstraint(
+                fields=["date", "routine_slot", "class_section"],
+                condition=models.Q(class_section__isnull=False, routine_slot__isnull=False),
+                name="unique_class_session_per_slot_date",
+            ),
+            models.UniqueConstraint(
+                fields=["date", "routine_slot", "house"],
+                condition=models.Q(house__isnull=False, routine_slot__isnull=False),
+                name="unique_house_session_per_slot_date",
+            ),
+            models.UniqueConstraint(
+                fields=["date", "routine_slot", "student_group"],
+                condition=models.Q(student_group__isnull=False, routine_slot__isnull=False),
+                name="unique_group_session_per_slot_date",
+            ),
+            models.UniqueConstraint(
+                fields=["date", "routine_slot"],
+                condition=models.Q(
+                    audience_kind="school",
+                    routine_slot__isnull=False,
+                ),
+                name="unique_school_session_per_slot_date",
+            ),
+            models.UniqueConstraint(
+                fields=["date", "routine_slot", "name"],
+                condition=models.Q(audience_kind="selected_students"),
+                name="unique_selected_session_per_slot_date_name",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["date", "start_time"]),
+            models.Index(fields=["academic_year", "date"]),
+            models.Index(fields=["audience_kind"]),
+            models.Index(fields=["responsible_staff", "date"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        kind = self.audience_kind
+        if kind == AudienceKind.CLASS:
+            if not self.class_section_id:
+                errors["class_section"] = "Class section is required for class sessions."
+            if self.house_id or self.student_group_id:
+                errors["audience_kind"] = (
+                    "Class sessions cannot also target a house or student group."
+                )
+        elif kind == AudienceKind.HOUSE:
+            if not self.house_id:
+                errors["house"] = "House is required for house sessions."
+            if self.class_section_id or self.student_group_id:
+                errors["audience_kind"] = (
+                    "House sessions cannot also target a class or student group."
+                )
+        elif kind == AudienceKind.SCHOOL:
+            if self.class_section_id or self.house_id or self.student_group_id:
+                errors["audience_kind"] = (
+                    "Whole-school sessions cannot target a class, house, or group."
+                )
+        elif kind == AudienceKind.STUDENT_GROUP:
+            if not self.student_group_id:
+                errors["student_group"] = "Student group is required for group sessions."
+            if self.class_section_id or self.house_id:
+                errors["audience_kind"] = (
+                    "Student-group sessions cannot also target a class or house."
+                )
+        elif kind == AudienceKind.SELECTED_STUDENTS:
+            if self.class_section_id or self.house_id or self.student_group_id:
+                errors["audience_kind"] = (
+                    "Selected-student sessions should use participants, "
+                    "not class/house/group fields."
+                )
+        if self.activity_type_id and self.activity_type.requires_subject and not self.subject_id:
+            errors["subject"] = "This activity type requires a subject."
+        if self.responsible_staff_id and self.responsible_staff.category != UserCategory.STAFF:
+            errors["responsible_staff"] = "Responsible staff must be a Staff user."
+        if (
+            self.routine_slot_id
+            and self.academic_year_id
+            and self.routine_slot.routine.academic_year_id != self.academic_year_id
+        ):
+            errors["routine_slot"] = "Routine slot must belong to the same academic year."
+        if (
+            self.student_group_id
+            and self.academic_year_id
+            and self.student_group.academic_year_id != self.academic_year_id
+        ):
+            errors["student_group"] = "Student group must belong to the same academic year."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.date} {self.name}"
+
+
+class ActivitySessionParticipant(models.Model):
+    """Explicit student list for a session (selected students / custom subsets)."""
+
+    session = models.ForeignKey(
+        ActivitySession,
+        on_delete=models.PROTECT,
+        related_name="participants",
+    )
+    student = models.ForeignKey(
+        Student,
+        on_delete=models.PROTECT,
+        related_name="session_participations",
+    )
+
+    class Meta:
+        ordering = ["session", "student"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["session", "student"],
+                name="unique_participant_per_session",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.student} — {self.session}"
+
+
+class StaffDutyAssignment(models.Model):
+    duty_type = models.ForeignKey(
+        DutyType,
+        on_delete=models.PROTECT,
+        related_name="assignments",
+    )
+    staff = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="duty_assignments",
+        limit_choices_to={"category": UserCategory.STAFF},
+    )
+    date = models.DateField()
+    academic_year = models.ForeignKey(
+        AcademicYear,
+        on_delete=models.PROTECT,
+        related_name="duty_assignments",
+    )
+
+    class Meta:
+        ordering = ["-date", "duty_type"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["staff", "duty_type", "date"],
+                name="unique_staff_duty_per_date",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["date", "duty_type"]),
+            models.Index(fields=["academic_year", "date"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.staff_id and self.staff.category != UserCategory.STAFF:
+            errors["staff"] = "Duty assignments require a Staff user."
+        if self.duty_type_id and self.duty_type.unique_per_day and self.date:
+            qs = StaffDutyAssignment.objects.filter(
+                duty_type=self.duty_type,
+                date=self.date,
+            )
+            if self.pk:
+                qs = qs.exclude(pk=self.pk)
+            if qs.exists():
+                errors["duty_type"] = (
+                    f"{self.duty_type} may be assigned to only one person on {self.date}."
+                )
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.duty_type} — {self.staff} ({self.date})"
+
+
+class AttendanceEntry(models.Model):
+    activity_session = models.ForeignKey(
+        ActivitySession,
+        on_delete=models.PROTECT,
+        related_name="attendance_entries",
+    )
+    student = models.ForeignKey(
+        Student,
+        on_delete=models.PROTECT,
+        related_name="attendance_entries",
+    )
+    status = models.CharField(max_length=16, choices=AttendanceStatus.choices)
+    taken_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="attendance_entries_taken",
+        limit_choices_to=_ATTENDANCE_ACTOR_LIMIT,
+        help_text="Normally a Staff user. Administration may be used only as an override.",
+    )
+    taken_at = models.DateTimeField(default=timezone.now)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="attendance_entries_updated",
+        null=True,
+        blank=True,
+        limit_choices_to=_ATTENDANCE_ACTOR_LIMIT,
+        help_text="Staff or Administration. Required when correcting status.",
+    )
+    updated_at = models.DateTimeField(null=True, blank=True)
+    notes = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["activity_session", "student"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["activity_session", "student"],
+                name="unique_attendance_per_student_session",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["student", "activity_session"]),
+            models.Index(fields=["status"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.taken_by_id and self.taken_by.category not in _ATTENDANCE_ACTOR_CATEGORIES:
+            errors["taken_by"] = (
+                "Attendance must be taken by a Staff user "
+                "(or Administration as an override)."
+            )
+        if self.updated_by_id and self.updated_by.category not in _ATTENDANCE_ACTOR_CATEGORIES:
+            errors["updated_by"] = (
+                "Attendance must be updated by a Staff or Administration user."
+            )
+        if self.pk:
+            old_status = (
+                AttendanceEntry.objects.filter(pk=self.pk)
+                .values_list("status", flat=True)
+                .first()
+            )
+            if old_status is not None and old_status != self.status and not self.updated_by_id:
+                errors["updated_by"] = (
+                    "A Staff or Administration user is required when changing attendance status."
+                )
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        old_status = None
+        if self.pk:
+            old_status = (
+                AttendanceEntry.objects.filter(pk=self.pk)
+                .values_list("status", flat=True)
+                .first()
+            )
+        status_changed = old_status is not None and old_status != self.status
+        if status_changed:
+            self.updated_at = timezone.now()
+        self.full_clean()
+        if status_changed:
+            with transaction.atomic():
+                super().save(*args, **kwargs)
+                AttendanceRevision.objects.create(
+                    entry=self,
+                    old_status=old_status,
+                    new_status=self.status,
+                    changed_by=self.updated_by,
+                    changed_at=self.updated_at or timezone.now(),
+                    reason=getattr(self, "_status_change_reason", "") or "",
+                )
+        else:
+            super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.student} — {self.activity_session} — {self.status}"
+
+
+class AttendanceRevision(models.Model):
+    """Narrow history of AttendanceEntry status changes only."""
+
+    entry = models.ForeignKey(
+        AttendanceEntry,
+        on_delete=models.PROTECT,
+        related_name="revisions",
+    )
+    old_status = models.CharField(max_length=16, choices=AttendanceStatus.choices)
+    new_status = models.CharField(max_length=16, choices=AttendanceStatus.choices)
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="attendance_revisions",
+        limit_choices_to=_ATTENDANCE_ACTOR_LIMIT,
+    )
+    changed_at = models.DateTimeField()
+    reason = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["-changed_at"]
+        indexes = [
+            models.Index(fields=["entry", "changed_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.entry_id}: {self.old_status} → {self.new_status}"
