@@ -33,6 +33,12 @@
   <p>{{ notice }}</p>
 {% endif %}
 
+{% if attendance_coverage_url %}
+  <p>
+    <a href="{{ attendance_coverage_url }}">Attendance coverage</a>
+  </p>
+{% endif %}
+
 <div class="report-summary">
   <strong>Summary</strong>
   · Sessions: {{ report.session_count }}

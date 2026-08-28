@@ -1,0 +1,83 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  .coverage-form { margin: 0 0 1em; display: flex; flex-wrap: wrap; gap: 0.75em; align-items: end; }
+  .coverage-summary { margin: 0.5em 0 1em; }
+  .coverage-table { width: 100%; border-collapse: collapse; }
+  .coverage-table th, .coverage-table td { padding: 6px 8px; vertical-align: top; }
+</style>
+{% endblock %}
+
+{% block content %}
+<form method="get" class="coverage-form">
+  <label>Academic year
+    <select name="academic_year">
+      {% for year in years %}
+        <option value="{{ year.pk }}" {% if selected_year and selected_year.pk == year.pk %}selected{% endif %}>{{ year }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>From
+    <input type="date" name="date_from" value="{% if date_from %}{{ date_from|date:'Y-m-d' }}{% endif %}">
+  </label>
+  <label>To
+    <input type="date" name="date_to" value="{% if date_to %}{{ date_to|date:'Y-m-d' }}{% endif %}">
+  </label>
+  {% for value, label in status_choices %}
+    <label>
+      <input type="checkbox" name="status" value="{{ value }}"
+             {% if value in selected_statuses %}checked{% endif %}>
+      {{ label }}
+    </label>
+  {% endfor %}
+  <button type="submit" class="default">Show</button>
+</form>
+
+{% if notice %}
+  <p>{{ notice }}</p>
+{% endif %}
+
+<div class="coverage-summary">
+  <strong>All authorized sessions:</strong> {{ summary.total }}
+  · Not started: {{ summary.not_started }}
+  · Partial: {{ summary.partial }}
+  · Complete: {{ summary.complete }}
+  · Empty roster: {{ summary.empty_roster }}
+</div>
+
+{% if rows %}
+<table class="coverage-table">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Time</th>
+      <th>Activity</th>
+      <th>Audience</th>
+      <th>Target</th>
+      <th>Roster</th>
+      <th>Marked</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.session.date }}</td>
+      <td>{{ row.session.start_time }}–{{ row.session.end_time }}</td>
+      <td>{{ row.session.name }} ({{ row.session.activity_type }})</td>
+      <td>{{ row.session.get_audience_kind_display }}</td>
+      <td>{{ row.target }}</td>
+      <td>{{ row.roster_count }}</td>
+      <td>{{ row.marked_count }}</td>
+      <td>{{ row.status }}</td>
+      <td><a href="{{ row.mark_url }}">Mark attendance</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

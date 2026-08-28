@@ -50,6 +50,7 @@ class AcademicYearAdmin(admin.ModelAdmin):
         "end_date",
         "is_current",
         "school_attendance_report_link",
+        "attendance_coverage_link",
     )
     list_filter = ("is_current",)
     search_fields = ("name",)
@@ -60,6 +61,15 @@ class AcademicYearAdmin(admin.ModelAdmin):
         url = reverse("admin:school_activitysession_school_attendance_report")
         return format_html(
             '<a href="{}?academic_year={}">School attendance report</a>',
+            url,
+            obj.pk,
+        )
+
+    @admin.display(description="Coverage")
+    def attendance_coverage_link(self, obj):
+        url = reverse("admin:school_activitysession_attendance_coverage")
+        return format_html(
+            '<a href="{}?academic_year={}">Attendance coverage</a>',
             url,
             obj.pk,
         )
@@ -1018,6 +1028,9 @@ class ActivitySessionAdmin(admin.ModelAdmin):
         extra_context["school_attendance_report_url"] = reverse(
             "admin:school_activitysession_school_attendance_report"
         )
+        extra_context["attendance_coverage_url"] = reverse(
+            "admin:school_activitysession_attendance_coverage"
+        )
         return super().changelist_view(request, extra_context)
 
     def get_urls(self):
@@ -1036,6 +1049,11 @@ class ActivitySessionAdmin(admin.ModelAdmin):
                 "school-attendance-report/",
                 self.admin_site.admin_view(self.school_attendance_report_view),
                 name="school_activitysession_school_attendance_report",
+            ),
+            path(
+                "attendance-coverage/",
+                self.admin_site.admin_view(self.attendance_coverage_view),
+                name="school_activitysession_attendance_coverage",
             ),
             path(
                 "<int:object_id>/mark-attendance/",
@@ -1163,6 +1181,10 @@ class ActivitySessionAdmin(admin.ModelAdmin):
                 else ""
             ),
             "school_attendance_report_url": self._school_report_url_for_overview(
+                selected_date,
+                calendar_day,
+            ),
+            "attendance_coverage_url": self._coverage_url_for_overview(
                 selected_date,
                 calendar_day,
             ),
@@ -1329,6 +1351,161 @@ class ActivitySessionAdmin(admin.ModelAdmin):
             + urlencode(params)
         )
 
+    def _coverage_url_for_overview(self, selected_date, calendar_day):
+        if selected_date is None:
+            return ""
+        params = {
+            "date_from": selected_date.isoformat(),
+            "date_to": selected_date.isoformat(),
+        }
+        if calendar_day is not None:
+            params["academic_year"] = calendar_day.academic_year_id
+        return (
+            reverse("admin:school_activitysession_attendance_coverage")
+            + "?"
+            + urlencode(params)
+        )
+
+    def attendance_coverage_view(self, request):
+        from .attendance_auth import sessions_user_may_mark
+        from .attendance_roster import overview_rows_for_sessions
+
+        if request.method != "GET":
+            return HttpResponseNotAllowed(["GET"])
+
+        user = request.user
+        if (
+            not user.is_authenticated
+            or not user.is_active
+            or user.category == UserCategory.PARENT
+        ):
+            return self._forbidden_attendance(
+                request,
+                "You are not authorized to view attendance coverage.",
+            )
+
+        status_choices = (
+            ("not_started", "Not started"),
+            ("partial", "Partial"),
+            ("complete", "Complete"),
+            ("empty_roster", "Empty roster"),
+        )
+        status_labels = dict(status_choices)
+        default_statuses = ("not_started", "partial", "empty_roster")
+        raw_statuses = request.GET.getlist("status")
+        selected_statuses = tuple(
+            status for status in raw_statuses if status in status_labels
+        )
+        if not selected_statuses:
+            selected_statuses = default_statuses
+        selected_labels = {status_labels[status] for status in selected_statuses}
+
+        years = list(AcademicYear.objects.order_by("-start_date"))
+        notice = ""
+        selected_year = AcademicYear.objects.filter(is_current=True).first()
+        if selected_year is None:
+            selected_year = years[0] if years else None
+
+        raw_year = request.GET.get("academic_year")
+        if raw_year:
+            try:
+                selected_year = AcademicYear.objects.get(pk=int(raw_year))
+            except (AcademicYear.DoesNotExist, TypeError, ValueError):
+                notice = "Enter a valid academic year."
+                selected_year = None
+
+        date_from = selected_year.start_date if selected_year else None
+        date_to = selected_year.end_date if selected_year else None
+        raw_from = request.GET.get("date_from")
+        raw_to = request.GET.get("date_to")
+        if raw_from:
+            try:
+                date_from = date.fromisoformat(raw_from)
+            except ValueError:
+                notice = "Enter a valid date."
+                date_from = None
+        if raw_to:
+            try:
+                date_to = date.fromisoformat(raw_to)
+            except ValueError:
+                notice = "Enter a valid date."
+                date_to = None
+        if date_from and date_to and date_from > date_to:
+            notice = "The start date must be on or before the end date."
+            date_from = None
+            date_to = None
+
+        all_rows = []
+        rows = []
+        summary = {
+            "total": 0,
+            "not_started": 0,
+            "partial": 0,
+            "complete": 0,
+            "empty_roster": 0,
+        }
+        status_to_key = {
+            "Not started": "not_started",
+            "Partial": "partial",
+            "Complete": "complete",
+            "Empty roster": "empty_roster",
+        }
+        if selected_year and date_from and date_to:
+            sessions = (
+                sessions_user_may_mark(user)
+                .filter(
+                    academic_year=selected_year,
+                    date__gte=date_from,
+                    date__lte=date_to,
+                )
+                .select_related(
+                    "activity_type",
+                    "class_section",
+                    "house",
+                    "student_group",
+                    "responsible_staff",
+                    "routine_slot",
+                )
+                .order_by("date", "start_time", "name")
+            )
+            all_rows = overview_rows_for_sessions(sessions)
+            summary["total"] = len(all_rows)
+            for item in all_rows:
+                key = status_to_key.get(item["status"])
+                if key:
+                    summary[key] += 1
+                session = item["session"]
+                item["target"] = self._overview_target_label(session)
+                item["mark_url"] = reverse(
+                    "admin:school_activitysession_mark_attendance",
+                    args=[session.pk],
+                )
+            rows = [item for item in all_rows if item["status"] in selected_labels]
+            if not all_rows and not notice:
+                notice = "No authorized attendance-capable sessions in this range."
+            elif all_rows and not rows and not notice:
+                notice = "No sessions match the selected coverage statuses."
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Attendance coverage",
+            "opts": self.model._meta,
+            "years": years,
+            "selected_year": selected_year,
+            "date_from": date_from,
+            "date_to": date_to,
+            "notice": notice,
+            "rows": rows,
+            "summary": summary,
+            "selected_statuses": selected_statuses,
+            "status_choices": status_choices,
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/activitysession/attendance_coverage.html",
+            context,
+        )
+
     def school_attendance_report_view(self, request):
         from .attendance_auth import sessions_user_may_mark
         from .attendance_roster import build_school_attendance_report
@@ -1438,6 +1615,10 @@ class ActivitySessionAdmin(admin.ModelAdmin):
             "notice": notice,
             "report": report,
             "percentage_display": self._format_present_rate(report["percentage"]),
+            "attendance_coverage_url": (
+                reverse("admin:school_activitysession_attendance_coverage")
+                + (f"?{query}" if query else "")
+            ),
         }
         return TemplateResponse(
             request,
