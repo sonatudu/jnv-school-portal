@@ -64,6 +64,20 @@ def generate_sessions_for_calendar_days(calendar_days):
     return [generate_sessions_for_calendar_day(day) for day in calendar_days]
 
 
+def generate_sessions_for_date_range(date_from, date_to):
+    """Generate only for existing SchoolCalendarDay rows in the inclusive range."""
+    if date_from > date_to:
+        result = DayGenerationResult(date=date_from)
+        result.errors.append("The start date must be on or before the end date.")
+        return [result]
+    days = (
+        SchoolCalendarDay.objects.filter(date__gte=date_from, date__lte=date_to)
+        .select_related("academic_year", "routine")
+        .order_by("date")
+    )
+    return generate_sessions_for_calendar_days(days)
+
+
 def generate_sessions_for_calendar_day(calendar_day):
     result = DayGenerationResult(date=calendar_day.date)
     year = calendar_day.academic_year
@@ -84,6 +98,9 @@ def generate_sessions_for_calendar_day(calendar_day):
         "start_time",
     )
     for slot in slots:
+        if not slot.is_active:
+            result.skipped += 1
+            continue
         _generate_for_slot(calendar_day, slot, result)
     return result
 
@@ -364,8 +381,9 @@ def _get_or_create_session(result, lookup, create_kwargs, label):
         return False, existing
 
     try:
-        session = ActivitySession(**create_kwargs)
-        session.save()
+        with transaction.atomic():
+            session = ActivitySession(**create_kwargs)
+            session.save()
     except IntegrityError:
         result.already_existed += 1
         return False, ActivitySession.objects.filter(**lookup).first()

@@ -558,6 +558,7 @@ class RoutineSlot(models.Model):
     start_time = models.TimeField()
     end_time = models.TimeField()
     sort_order = models.PositiveSmallIntegerField()
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["routine", "sort_order", "start_time"]
@@ -1017,6 +1018,11 @@ class StaffDutyAssignment(models.Model):
         on_delete=models.PROTECT,
         related_name="duty_assignments",
     )
+    enforces_unique_per_day = models.BooleanField(
+        default=False,
+        editable=False,
+        help_text="Copied from the duty type so unique-per-day duties can be constrained in the database.",
+    )
 
     class Meta:
         ordering = ["-date", "duty_type"]
@@ -1024,6 +1030,11 @@ class StaffDutyAssignment(models.Model):
             models.UniqueConstraint(
                 fields=["staff", "duty_type", "date"],
                 name="unique_staff_duty_per_date",
+            ),
+            models.UniqueConstraint(
+                fields=["date", "academic_year"],
+                condition=models.Q(enforces_unique_per_day=True),
+                name="unique_unique_per_day_duty_per_date_year",
             ),
         ]
         indexes = [
@@ -1036,21 +1047,26 @@ class StaffDutyAssignment(models.Model):
         errors = {}
         if self.staff_id and self.staff.category != UserCategory.STAFF:
             errors["staff"] = "Duty assignments require a Staff user."
-        if self.duty_type_id and self.duty_type.unique_per_day and self.date:
+        if self.duty_type_id:
+            self.enforces_unique_per_day = bool(self.duty_type.unique_per_day)
+        if self.enforces_unique_per_day and self.date and self.academic_year_id:
             qs = StaffDutyAssignment.objects.filter(
-                duty_type=self.duty_type,
                 date=self.date,
+                academic_year=self.academic_year,
+                enforces_unique_per_day=True,
             )
             if self.pk:
                 qs = qs.exclude(pk=self.pk)
             if qs.exists():
                 errors["duty_type"] = (
-                    f"{self.duty_type} may be assigned to only one person on {self.date}."
+                    f"A unique-per-day duty is already assigned on {self.date}."
                 )
         if errors:
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        if self.duty_type_id:
+            self.enforces_unique_per_day = bool(self.duty_type.unique_per_day)
         self.full_clean()
         super().save(*args, **kwargs)
 
