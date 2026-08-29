@@ -777,7 +777,7 @@ class RoutineSlotInline(admin.TabularInline):
     extra = 3
     ordering = ("sort_order", "start_time")
     autocomplete_fields = ("activity_type",)
-    fields = ("sort_order", "activity_type", "name", "start_time", "end_time")
+    fields = ("sort_order", "activity_type", "name", "start_time", "end_time", "is_active")
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "activity_type":
@@ -824,6 +824,7 @@ class ClassTimetableEntryForm(forms.ModelForm):
 
         slots = RoutineSlot.objects.filter(
             routine__is_active=True,
+            is_active=True,
             activity_type__is_active=True,
             activity_type__default_audience_kind=AudienceKind.CLASS,
         ).select_related("routine", "activity_type")
@@ -858,8 +859,16 @@ class RoutineAdmin(admin.ModelAdmin):
 
 @admin.register(RoutineSlot)
 class RoutineSlotAdmin(admin.ModelAdmin):
-    list_display = ("name", "routine", "activity_type", "start_time", "end_time", "sort_order")
-    list_filter = ("routine__academic_year", "routine", "activity_type")
+    list_display = (
+        "name",
+        "routine",
+        "activity_type",
+        "start_time",
+        "end_time",
+        "sort_order",
+        "is_active",
+    )
+    list_filter = ("routine__academic_year", "routine", "activity_type", "is_active")
     search_fields = ("name", "routine__name", "activity_type__name")
     autocomplete_fields = ("routine", "activity_type")
     ordering = ("routine", "sort_order")
@@ -2247,7 +2256,8 @@ class ActivitySessionParticipantAdmin(admin.ModelAdmin):
 @admin.register(StaffDutyAssignment)
 class StaffDutyAssignmentAdmin(admin.ModelAdmin):
     list_display = ("date", "duty_type", "staff", "academic_year")
-    list_filter = ("academic_year", "duty_type", "date")
+    list_filter = ("academic_year", "duty_type", "duty_type__unique_per_day", "date")
+    date_hierarchy = "date"
     search_fields = (
         "staff__username",
         "staff__first_name",
@@ -2256,7 +2266,8 @@ class StaffDutyAssignmentAdmin(admin.ModelAdmin):
     )
     autocomplete_fields = ("duty_type", "staff", "academic_year")
     list_select_related = ("duty_type", "staff", "academic_year")
-    ordering = ("-date",)
+    ordering = ("-date", "duty_type")
+    list_per_page = 50
 
 
 class AttendanceEntryAdmin(admin.ModelAdmin):

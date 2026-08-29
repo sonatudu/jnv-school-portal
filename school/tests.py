@@ -2,12 +2,14 @@ from datetime import date, time
 
 from django.contrib.admin.sites import site
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
 
 from accounts.models import UserCategory
 
+from .attendance_auth import can_take_attendance, get_unique_active_mod
 from .attendance_roster import (
     build_class_attendance_report,
     build_house_attendance_report,
@@ -17,6 +19,11 @@ from .attendance_roster import (
     orphan_entries_for_session,
     roster_student_ids_by_session,
     students_for_session,
+)
+from .generation import (
+    generate_sessions_for_calendar_day,
+    generate_sessions_for_date,
+    generate_sessions_for_date_range,
 )
 from .models import (
     AcademicYear,
@@ -28,10 +35,12 @@ from .models import (
     AttendanceStatus,
     AudienceKind,
     ClassSection,
+    ClassTimetableEntry,
     DutyType,
     House,
     HouseMasterAssignment,
     Routine,
+    RoutineSlot,
     SchoolCalendarDay,
     StaffDutyAssignment,
     Student,
@@ -39,6 +48,9 @@ from .models import (
     StudentGroup,
     StudentGroupMembership,
     StudentHouseMembership,
+    Subject,
+    TeacherProfile,
+    TeachingAssignment,
 )
 
 
@@ -4407,5 +4419,626 @@ class StudentClassMembershipTests(TestCase):
             reverse("admin:school_student_change", args=[self.student.pk])
         )
         self.assertContains(change, "Class placement history")
+
+
+class SessionGenerationTests(TestCase):
+    def setUp(self):
+        self.year = AcademicYear.objects.create(
+            name="2026-27",
+            start_date=date(2026, 4, 1),
+            end_date=date(2027, 3, 31),
+            is_current=True,
+        )
+        self.other_year = AcademicYear.objects.create(
+            name="2027-28",
+            start_date=date(2027, 4, 1),
+            end_date=date(2028, 3, 31),
+        )
+        self.section = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="A",
+            display_name="VI-A",
+        )
+        self.other_section = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="B",
+            display_name="VI-B",
+        )
+        self.staff = User.objects.create_user(
+            username="gen-staff",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.admin_user = User.objects.create_user(
+            username="gen-admin",
+            password="x",
+            category=UserCategory.ADMINISTRATION,
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.teacher = TeacherProfile.objects.create(user=self.staff)
+        self.subject = Subject.objects.create(name="Mathematics", code="MA")
+        TeachingAssignment.objects.create(
+            teacher=self.teacher,
+            subject=self.subject,
+            class_section=self.section,
+            academic_year=self.year,
+        )
+        self.class_type = ActivityType.objects.create(
+            name="Taught period",
+            takes_attendance=True,
+            default_audience_kind=AudienceKind.CLASS,
+        )
+        self.school_type = ActivityType.objects.create(
+            name="Assembly",
+            takes_attendance=True,
+            default_audience_kind=AudienceKind.SCHOOL,
+        )
+        self.house_type = ActivityType.objects.create(
+            name="House roll",
+            takes_attendance=True,
+            default_audience_kind=AudienceKind.HOUSE,
+        )
+        self.routine = Routine.objects.create(
+            academic_year=self.year,
+            name="Weekday",
+        )
+        self.saturday_routine = Routine.objects.create(
+            academic_year=self.year,
+            name="Half day",
+        )
+        self.slot_one = RoutineSlot.objects.create(
+            routine=self.routine,
+            activity_type=self.class_type,
+            name="Alpha block",
+            start_time=time(9, 15),
+            end_time=time(9, 55),
+            sort_order=1,
+        )
+        self.slot_two = RoutineSlot.objects.create(
+            routine=self.routine,
+            activity_type=self.class_type,
+            name="Beta block",
+            start_time=time(10, 5),
+            end_time=time(10, 45),
+            sort_order=2,
+        )
+        self.inactive_slot = RoutineSlot.objects.create(
+            routine=self.routine,
+            activity_type=self.class_type,
+            name="Unused block",
+            start_time=time(11, 0),
+            end_time=time(11, 40),
+            sort_order=3,
+            is_active=False,
+        )
+        self.saturday_slot = RoutineSlot.objects.create(
+            routine=self.saturday_routine,
+            activity_type=self.class_type,
+            name="Compact block",
+            start_time=time(8, 30),
+            end_time=time(9, 10),
+            sort_order=1,
+        )
+        ClassTimetableEntry.objects.create(
+            academic_year=self.year,
+            class_section=self.section,
+            routine_slot=self.slot_one,
+            subject=self.subject,
+            teacher=self.teacher,
+        )
+        ClassTimetableEntry.objects.create(
+            academic_year=self.year,
+            class_section=self.section,
+            routine_slot=self.slot_two,
+            subject=self.subject,
+            teacher=self.teacher,
+        )
+        ClassTimetableEntry.objects.create(
+            academic_year=self.year,
+            class_section=self.section,
+            routine_slot=self.saturday_slot,
+            subject=self.subject,
+            teacher=self.teacher,
+        )
+        self.day = date(2026, 8, 28)
+        self.saturday = date(2026, 8, 29)
+        self.calendar = SchoolCalendarDay.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            routine=self.routine,
+        )
+        self.saturday_calendar = SchoolCalendarDay.objects.create(
+            date=self.saturday,
+            academic_year=self.year,
+            routine=self.saturday_routine,
+        )
+        self.student = Student.objects.create(
+            admission_number="GEN1",
+            roll_number=1,
+            first_name="Ada",
+            last_name="A",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.section,
+            academic_year=self.year,
+        )
+
+    def test_routine_slots_and_calendar_are_configurable(self):
+        self.assertEqual(self.routine.slots.count(), 3)
+        self.assertEqual(self.calendar.routine, self.routine)
+        self.assertEqual(self.saturday_calendar.routine, self.saturday_routine)
+
+    def test_generate_date_creates_ordered_sessions_with_configured_times(self):
+        result = generate_sessions_for_date(self.day)
+        self.assertEqual(result.created, 2)
+        sessions = list(
+            ActivitySession.objects.filter(date=self.day).order_by("start_time", "name")
+        )
+        self.assertEqual(
+            [session.name for session in sessions],
+            ["Alpha block", "Beta block"],
+        )
+        self.assertEqual(sessions[0].start_time, time(9, 15))
+        self.assertEqual(sessions[0].end_time, time(9, 55))
+        self.assertEqual(sessions[0].activity_type, self.class_type)
+        self.assertEqual(sessions[0].academic_year, self.year)
+        self.assertEqual(sessions[0].class_section, self.section)
+        self.assertEqual(sessions[0].routine_slot, self.slot_one)
+        self.assertEqual(sessions[1].routine_slot.sort_order, 2)
+        self.assertFalse(
+            ActivitySession.objects.filter(name="Unused block").exists()
+        )
+
+    def test_different_dates_use_different_routines(self):
+        generate_sessions_for_date(self.day)
+        generate_sessions_for_date(self.saturday)
+        weekday_names = set(
+            ActivitySession.objects.filter(date=self.day).values_list("name", flat=True)
+        )
+        saturday_names = set(
+            ActivitySession.objects.filter(date=self.saturday).values_list(
+                "name", flat=True
+            )
+        )
+        self.assertEqual(weekday_names, {"Alpha block", "Beta block"})
+        self.assertEqual(saturday_names, {"Compact block"})
+
+    def test_rerun_is_idempotent_and_leaves_attendance(self):
+        generate_sessions_for_date(self.day)
+        session = ActivitySession.objects.get(date=self.day, name="Alpha block")
+        entry = AttendanceEntry.objects.create(
+            activity_session=session,
+            student=self.student,
+            status=AttendanceStatus.PRESENT,
+            taken_by=self.staff,
+        )
+        before_sessions = ActivitySession.objects.filter(date=self.day).count()
+        second = generate_sessions_for_date(self.day)
+        self.assertEqual(second.created, 0)
+        self.assertEqual(second.already_existed, 2)
+        self.assertEqual(
+            ActivitySession.objects.filter(date=self.day).count(),
+            before_sessions,
+        )
+        self.assertEqual(ActivitySession.objects.get(pk=session.pk).pk, session.pk)
+        self.assertEqual(AttendanceEntry.objects.get(pk=entry.pk).status, AttendanceStatus.PRESENT)
+        self.assertEqual(AttendanceEntry.objects.count(), 1)
+
+    def test_inactive_slots_and_missing_calendar(self):
+        missing = generate_sessions_for_date(date(2026, 9, 1))
+        self.assertIn("No calendar row", missing.errors[0])
+        self.assertEqual(ActivitySession.objects.filter(date=date(2026, 9, 1)).count(), 0)
+        generate_sessions_for_calendar_day(self.calendar)
+        self.assertFalse(
+            ActivitySession.objects.filter(routine_slot=self.inactive_slot).exists()
+        )
+
+    def test_academic_years_are_isolated(self):
+        other_routine = Routine.objects.create(
+            academic_year=self.other_year,
+            name="Weekday",
+        )
+        other_slot = RoutineSlot.objects.create(
+            routine=other_routine,
+            activity_type=self.class_type,
+            name="Next-year block",
+            start_time=time(9, 15),
+            end_time=time(9, 55),
+            sort_order=1,
+        )
+        other_day = date(2027, 8, 28)
+        SchoolCalendarDay.objects.create(
+            date=other_day,
+            academic_year=self.other_year,
+            routine=other_routine,
+        )
+        TeachingAssignment.objects.create(
+            teacher=self.teacher,
+            subject=self.subject,
+            class_section=self.section,
+            academic_year=self.other_year,
+        )
+        ClassTimetableEntry.objects.create(
+            academic_year=self.other_year,
+            class_section=self.section,
+            routine_slot=other_slot,
+            subject=self.subject,
+            teacher=self.teacher,
+        )
+        generate_sessions_for_date(self.day)
+        generate_sessions_for_date(other_day)
+        this_year = ActivitySession.objects.filter(academic_year=self.year)
+        next_year = ActivitySession.objects.filter(academic_year=self.other_year)
+        self.assertTrue(this_year.exists())
+        self.assertTrue(next_year.filter(name="Next-year block").exists())
+        self.assertFalse(this_year.filter(name="Next-year block").exists())
+        self.assertFalse(next_year.filter(date=self.day).exists())
+
+    def test_class_targeting_and_date_range(self):
+        generate_sessions_for_date(self.day)
+        sessions = ActivitySession.objects.filter(date=self.day)
+        self.assertEqual(
+            set(sessions.values_list("class_section_id", flat=True)),
+            {self.section.pk},
+        )
+        self.assertFalse(
+            sessions.filter(class_section=self.other_section).exists()
+        )
+        self.assertEqual(
+            list(students_for_session(sessions.get(name="Alpha block"))),
+            [self.student],
+        )
+        later = date(2026, 8, 30)
+        generate_sessions_for_date_range(self.day, later)
+        self.assertEqual(
+            ActivitySession.objects.filter(date=self.saturday).count(),
+            1,
+        )
+        self.assertEqual(ActivitySession.objects.filter(date=later).count(), 0)
+        inverted = generate_sessions_for_date_range(self.saturday, self.day)
+        self.assertIn("start date must be on or before", inverted[0].errors[0])
+
+    def test_house_and_school_generation_use_existing_duty_architecture(self):
+        house = House.objects.create(name="Aravali", code="AR")
+        HouseMasterAssignment.objects.create(
+            staff=self.staff,
+            house=house,
+            academic_year=self.year,
+        )
+        house_slot = RoutineSlot.objects.create(
+            routine=self.routine,
+            activity_type=self.house_type,
+            name="House gathering",
+            start_time=time(7, 0),
+            end_time=time(7, 20),
+            sort_order=0,
+        )
+        school_slot = RoutineSlot.objects.create(
+            routine=self.routine,
+            activity_type=self.school_type,
+            name="Morning assembly",
+            start_time=time(8, 0),
+            end_time=time(8, 20),
+            sort_order=4,
+        )
+        generate_sessions_for_date(self.day)
+        self.assertTrue(
+            ActivitySession.objects.filter(
+                date=self.day,
+                house=house,
+                name="House gathering",
+            ).exists()
+        )
+        self.assertFalse(
+            ActivitySession.objects.filter(
+                date=self.day,
+                audience_kind=AudienceKind.SCHOOL,
+            ).exists()
+        )
+        StaffDutyAssignment.objects.create(
+            duty_type=DutyType.objects.create(
+                name="Day officer",
+                unique_per_day=True,
+                is_active=True,
+            ),
+            staff=self.staff,
+            date=self.day,
+            academic_year=self.year,
+        )
+        generate_sessions_for_date(self.day)
+        school = ActivitySession.objects.get(
+            date=self.day,
+            audience_kind=AudienceKind.SCHOOL,
+        )
+        self.assertEqual(school.responsible_staff, self.staff)
+        self.assertEqual(school.routine_slot, school_slot)
+
+    def test_admin_generate_action_does_not_duplicate(self):
+        self.client.force_login(self.admin_user)
+        url = reverse("admin:school_schoolcalendarday_changelist")
+        data = {
+            "action": "generate_daily_sessions",
+            "_selected_action": [str(self.calendar.pk)],
+        }
+        first = self.client.post(url, data, follow=True)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(ActivitySession.objects.filter(date=self.day).count(), 2)
+        second = self.client.post(url, data, follow=True)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(ActivitySession.objects.filter(date=self.day).count(), 2)
+
+
+class ModDutyAndResponsibilityTests(TestCase):
+    def setUp(self):
+        self.year = AcademicYear.objects.create(
+            name="2026-27",
+            start_date=date(2026, 4, 1),
+            end_date=date(2027, 3, 31),
+            is_current=True,
+        )
+        self.other_year = AcademicYear.objects.create(
+            name="2027-28",
+            start_date=date(2027, 4, 1),
+            end_date=date(2028, 3, 31),
+        )
+        self.section = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="A",
+            display_name="VI-A",
+        )
+        self.house = House.objects.create(name="Aravali", code="AR")
+        self.teacher = User.objects.create_user(
+            username="resp-teacher",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.other_staff = User.objects.create_user(
+            username="resp-other",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.mod = User.objects.create_user(
+            username="resp-mod",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.hm = User.objects.create_user(
+            username="resp-hm",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.lonely = User.objects.create_user(
+            username="resp-lonely",
+            password="x",
+            category=UserCategory.STAFF,
+            is_staff=True,
+        )
+        self.activity = ActivityType.objects.create(
+            name="Supervised study",
+            takes_attendance=True,
+        )
+        self.mod_duty = DutyType.objects.create(
+            name="Master on Duty",
+            unique_per_day=True,
+            is_active=True,
+        )
+        self.gate_duty = DutyType.objects.create(
+            name="Gate",
+            unique_per_day=False,
+            is_active=True,
+        )
+        self.day = date(2026, 8, 28)
+        self.next_day = date(2026, 8, 29)
+        self.session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.activity,
+            name="Evening study",
+            start_time=time(18, 0),
+            end_time=time(19, 30),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.teacher,
+        )
+        self.next_session = ActivitySession.objects.create(
+            date=self.next_day,
+            academic_year=self.year,
+            activity_type=self.activity,
+            name="Evening study",
+            start_time=time(18, 0),
+            end_time=time(19, 30),
+            audience_kind=AudienceKind.CLASS,
+            class_section=self.section,
+            responsible_staff=self.teacher,
+        )
+        self.house_session = ActivitySession.objects.create(
+            date=self.day,
+            academic_year=self.year,
+            activity_type=self.activity,
+            name="House gathering",
+            start_time=time(20, 0),
+            end_time=time(20, 30),
+            audience_kind=AudienceKind.HOUSE,
+            house=self.house,
+            responsible_staff=self.teacher,
+        )
+        HouseMasterAssignment.objects.create(
+            staff=self.hm,
+            house=self.house,
+            academic_year=self.year,
+        )
+        self.student = Student.objects.create(
+            admission_number="RESP1",
+            roll_number=1,
+            first_name="Ada",
+            last_name="A",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.section,
+            academic_year=self.year,
+        )
+
+    def test_mod_assignment_is_date_specific(self):
+        assignment = StaffDutyAssignment.objects.create(
+            duty_type=self.mod_duty,
+            staff=self.mod,
+            date=self.day,
+            academic_year=self.year,
+        )
+        self.assertTrue(assignment.enforces_unique_per_day)
+        self.assertEqual(get_unique_active_mod(self.day, self.year), self.mod)
+        StaffDutyAssignment.objects.create(
+            duty_type=self.mod_duty,
+            staff=self.mod,
+            date=self.next_day,
+            academic_year=self.year,
+        )
+        self.assertEqual(get_unique_active_mod(self.next_day, self.year), self.mod)
+        self.assertIsNone(get_unique_active_mod(date(2026, 8, 30), self.year))
+
+    def test_duplicate_mod_same_date_is_rejected(self):
+        StaffDutyAssignment.objects.create(
+            duty_type=self.mod_duty,
+            staff=self.mod,
+            date=self.day,
+            academic_year=self.year,
+        )
+        with self.assertRaises(ValidationError):
+            StaffDutyAssignment.objects.create(
+                duty_type=self.mod_duty,
+                staff=self.other_staff,
+                date=self.day,
+                academic_year=self.year,
+            )
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                StaffDutyAssignment.objects.bulk_create(
+                    [
+                        StaffDutyAssignment(
+                            duty_type=self.mod_duty,
+                            staff=self.other_staff,
+                            date=self.day,
+                            academic_year=self.year,
+                            enforces_unique_per_day=True,
+                        )
+                    ]
+                )
+        self.assertEqual(
+            StaffDutyAssignment.objects.filter(
+                date=self.day, academic_year=self.year
+            ).count(),
+            1,
+        )
+
+    def test_non_unique_duties_can_share_a_date(self):
+        StaffDutyAssignment.objects.create(
+            duty_type=self.gate_duty,
+            staff=self.teacher,
+            date=self.day,
+            academic_year=self.year,
+        )
+        StaffDutyAssignment.objects.create(
+            duty_type=self.gate_duty,
+            staff=self.other_staff,
+            date=self.day,
+            academic_year=self.year,
+        )
+        self.assertEqual(
+            StaffDutyAssignment.objects.filter(
+                duty_type=self.gate_duty,
+                date=self.day,
+            ).count(),
+            2,
+        )
+
+    def test_years_are_isolated_and_admin_lists_mod(self):
+        StaffDutyAssignment.objects.create(
+            duty_type=self.mod_duty,
+            staff=self.mod,
+            date=self.day,
+            academic_year=self.year,
+        )
+        other_date = date(2027, 8, 28)
+        StaffDutyAssignment.objects.create(
+            duty_type=self.mod_duty,
+            staff=self.other_staff,
+            date=other_date,
+            academic_year=self.other_year,
+        )
+        self.assertEqual(get_unique_active_mod(self.day, self.year), self.mod)
+        self.assertEqual(
+            get_unique_active_mod(other_date, self.other_year),
+            self.other_staff,
+        )
+        self.assertIsNone(get_unique_active_mod(self.day, self.other_year))
+        self.client.force_login(
+            User.objects.create_user(
+                username="resp-admin",
+                password="x",
+                category=UserCategory.ADMINISTRATION,
+                is_staff=True,
+                is_superuser=True,
+            )
+        )
+        listing = self.client.get(
+            reverse("admin:school_staffdutyassignment_changelist"),
+            {"date__gte": self.day.isoformat(), "date__lt": self.next_day.isoformat()},
+        )
+        self.assertContains(listing, "resp-mod")
+        self.assertContains(listing, "Master on Duty")
+
+    def test_responsible_staff_differs_from_attendance_taker(self):
+        StaffDutyAssignment.objects.create(
+            duty_type=self.mod_duty,
+            staff=self.mod,
+            date=self.day,
+            academic_year=self.year,
+        )
+        self.assertEqual(self.session.responsible_staff, self.teacher)
+        self.assertTrue(can_take_attendance(self.mod, self.session))
+        self.client.force_login(self.mod)
+        url = reverse(
+            "admin:school_activitysession_mark_attendance",
+            args=[self.session.pk],
+        )
+        response = self.client.post(
+            url,
+            {
+                "action": "save",
+                f"status_{self.student.pk}": AttendanceStatus.PRESENT,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        entry = AttendanceEntry.objects.get()
+        self.assertEqual(entry.taken_by, self.mod)
+        self.assertEqual(entry.activity_session.responsible_staff, self.teacher)
+        self.assertNotEqual(entry.taken_by, entry.activity_session.responsible_staff)
+
+    def test_mod_authority_does_not_spill_to_other_dates_or_lonely_staff(self):
+        StaffDutyAssignment.objects.create(
+            duty_type=self.mod_duty,
+            staff=self.mod,
+            date=self.day,
+            academic_year=self.year,
+        )
+        self.assertTrue(can_take_attendance(self.teacher, self.session))
+        self.assertTrue(can_take_attendance(self.mod, self.session))
+        self.assertFalse(can_take_attendance(self.mod, self.next_session))
+        self.assertFalse(can_take_attendance(self.lonely, self.session))
+        self.assertTrue(can_take_attendance(self.hm, self.house_session))
+        self.assertFalse(can_take_attendance(self.hm, self.session))
+        HouseMasterAssignment.objects.create(
+            staff=self.other_staff,
+            house=self.house,
+            academic_year=self.year,
+        )
+        self.assertTrue(can_take_attendance(self.other_staff, self.house_session))
+        self.assertEqual(self.house_session.responsible_staff, self.teacher)
 
 
