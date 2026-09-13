@@ -12,6 +12,8 @@
 {% endblock %}
 
 {% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
 <form method="get" class="report-form">
   <label>Academic year
     <select name="academic_year">
@@ -185,4 +187,5 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% endblock %}

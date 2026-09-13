@@ -1,0 +1,68 @@
+{% extends "portal/inner.html" %}
+{% block title %}Mark attendance · JNV School Portal{% endblock %}
+{% block panel %}
+  <h1>{{ title }}</h1>
+  <p class="muted">
+    {{ session.date }}
+    · {{ session.name }}
+    {% if session.routine_slot %}({{ session.routine_slot }}){% endif %}
+    · {{ session.activity_type }}
+    · {{ session.get_audience_kind_display }}
+    {% if session.class_section %}· {{ session.class_section }}{% endif %}
+    {% if session.house %}· {{ session.house }}{% endif %}
+    {% if session.student_group %}· {{ session.student_group }}{% endif %}
+    · Responsible: {{ session.responsible_staff }}
+  </p>
+  <p><strong>{{ marked_count }} / {{ roster_count }} marked</strong>
+    {% if orphan_rows %} · {{ orphan_rows|length }} previously marked, not on current roster{% endif %}
+  </p>
+
+  {% if errors %}
+    <ul class="errors">
+      {% for error in errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <form method="post" id="attendance-mark-form">
+    {% csrf_token %}
+  <p>
+      <button type="button" class="btn secondary" id="mark-all-present">Mark all Present</button>
+      <button type="submit" class="btn gold" name="action" value="save">Save</button>
+      <button type="submit" class="btn" name="action" value="save_unmarked_present">Save unmarked as Present</button>
+    </p>
+    <p>
+      <label>Correction reason (optional):
+        <input type="text" name="change_reason" value="{{ change_reason }}" maxlength="200" size="40">
+      </label>
+    </p>
+
+    {% include "admin/school/activitysession/_attendance_table.html" with rows=roster_rows heading="Roster" %}
+
+    {% if orphan_rows %}
+      <h2>Previously marked, not on current roster</h2>
+      {% include "admin/school/activitysession/_attendance_table.html" with rows=orphan_rows heading="" %}
+    {% endif %}
+
+    <p>
+      <button type="submit" class="btn gold" name="action" value="save">Save</button>
+    </p>
+  </form>
+{% endblock %}
+{% block extra %}
+<script>
+(function () {
+  var button = document.getElementById("mark-all-present");
+  if (!button) return;
+  button.addEventListener("click", function () {
+    document.querySelectorAll("tr.attendance-row[data-has-entry='0']").forEach(function (row) {
+      var checked = row.querySelector("input[type='radio']:checked");
+      if (checked) return;
+      var present = row.querySelector("input[type='radio'][value='present']");
+      if (present) present.checked = true;
+    });
+  });
+})();
+</script>
+{% endblock %}

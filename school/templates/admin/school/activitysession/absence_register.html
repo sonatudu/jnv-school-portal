@@ -12,6 +12,8 @@
 {% endblock %}
 
 {% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
 <form method="get" class="register-form">
   <label>Date:
     <input type="date" name="date" value="{% if selected_date %}{{ selected_date|date:'Y-m-d' }}{% endif %}">
@@ -74,4 +76,5 @@
   </tbody>
 </table>
 {% endif %}
+</div>
 {% endblock %}

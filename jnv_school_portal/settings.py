@@ -25,7 +25,18 @@ SECRET_KEY = 'django-insecure-57j9nv=#dl_d^zjav5x#5(!5j)fdsr%!&4ti!)$3!*w4eth0t3
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+# Allow LAN phones and public tunnels (trycloudflare / ngrok).
+ALLOWED_HOSTS = ["*"]
+CSRF_TRUSTED_ORIGINS = [
+    "https://*.trycloudflare.com",
+    "http://*.trycloudflare.com",
+    "https://*.ngrok-free.app",
+    "https://*.ngrok.io",
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://10.50.37.142:8000",
+    "http://10.135.6.205:8000",
+]
 
 
 # Application definition
@@ -58,13 +69,15 @@ ROOT_URLCONF = 'jnv_school_portal.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'school.context_processors.vidyalaya',
+                'school.context_processors.nav_back',
             ],
         },
     },
@@ -108,7 +121,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kolkata'
 
 USE_I18N = True
 
@@ -118,7 +131,12 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "portal-dashboard"
+LOGOUT_REDIRECT_URL = "portal-home"
+
 
 
 # Email

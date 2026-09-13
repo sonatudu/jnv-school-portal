@@ -1,0 +1,135 @@
+{% extends "admin/base_site.html" %}
+{% block bodyclass %}{{ block.super }} jnv-hub{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
+{% include "admin/includes/year_row.html" with opened_name=house.name %}
+
+{% include "admin/school/house/_house_nav.html" %}
+
+{% if can_edit %}
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="academic_year" value="{% if selected_year %}{{ selected_year.pk }}{% endif %}">
+  <fieldset class="module aligned">
+    <div class="form-row">
+      <label for="house-teacher">House teacher</label>
+      <div class="jnv-staff-cell">
+        <select id="house-teacher" name="house_teacher">
+          <option value="">—</option>
+          {% for staff in staff_users %}
+            <option value="{{ staff.pk }}"
+                    data-url="{% url 'admin:accounts_user_profile' staff.pk %}"
+                    {% if house_teacher and house_teacher.staff_id == staff.pk %}selected{% endif %}>{{ staff }}</option>
+          {% endfor %}
+        </select>
+        <a id="house-teacher-profile" class="jnv-staff-info" aria-label="View profile" hidden><span aria-hidden="true">i</span></a>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>
+        <input type="checkbox" id="show-assistant-house-teacher" name="show_assistant_house_teacher" {% if show_assistant_house_teacher %}checked{% endif %}>
+        Display assistant house teacher
+      </label>
+    </div>
+    <div class="form-row" id="assistant-house-teacher-row"{% if not show_assistant_house_teacher %} hidden{% endif %}>
+      <label for="assistant-house-teacher">Assistant house teacher</label>
+      <div class="jnv-staff-cell">
+        <select id="assistant-house-teacher" name="assistant_house_teacher">
+          <option value="">—</option>
+          {% for staff in staff_users %}
+            <option value="{{ staff.pk }}"
+                    data-url="{% url 'admin:accounts_user_profile' staff.pk %}"
+                    {% if assistant_house_teacher and assistant_house_teacher.staff_id == staff.pk %}selected{% endif %}>{{ staff }}</option>
+          {% endfor %}
+        </select>
+        <a id="assistant-house-teacher-profile" class="jnv-staff-info" aria-label="View profile" hidden><span aria-hidden="true">i</span></a>
+      </div>
+    </div>
+  </fieldset>
+  <div class="submit-row">
+    <button type="submit" class="default">Save</button>
+  </div>
+</form>
+<script>
+(function () {
+  var checkbox = document.getElementById("show-assistant-house-teacher");
+  var row = document.getElementById("assistant-house-teacher-row");
+  var houseSelect = document.getElementById("house-teacher");
+  var assistantSelect = document.getElementById("assistant-house-teacher");
+  var houseLink = document.getElementById("house-teacher-profile");
+  var assistantLink = document.getElementById("assistant-house-teacher-profile");
+
+  function refreshMenu(select) {
+    if (select) select.dispatchEvent(new Event("jnv-options-changed"));
+  }
+
+  function hideTaken(select, takenValue) {
+    Array.prototype.forEach.call(select.options, function (opt) {
+      if (!opt.value) return;
+      opt.hidden = Boolean(takenValue && opt.value === takenValue);
+    });
+  }
+
+  function updateLink(select, link) {
+    if (!select || !link) return;
+    var opt = select.options[select.selectedIndex];
+    var url = opt && opt.getAttribute("data-url");
+    if (opt && opt.value && url) {
+      link.href = url;
+      link.hidden = false;
+    } else {
+      link.removeAttribute("href");
+      link.hidden = true;
+    }
+  }
+
+  function syncTeacherOptions() {
+    if (!houseSelect || !assistantSelect) return;
+    var houseValue = houseSelect.value;
+    var assistantValue = assistantSelect.value;
+    if (houseValue && assistantValue === houseValue) {
+      assistantSelect.value = "";
+      assistantValue = "";
+    }
+    hideTaken(assistantSelect, houseValue);
+    hideTaken(houseSelect, assistantValue);
+    refreshMenu(houseSelect);
+    refreshMenu(assistantSelect);
+    updateLink(houseSelect, houseLink);
+    updateLink(assistantSelect, assistantLink);
+  }
+
+  if (checkbox && row) {
+    checkbox.addEventListener("change", function () {
+      row.hidden = !checkbox.checked;
+      syncTeacherOptions();
+    });
+  }
+  if (houseSelect) houseSelect.addEventListener("change", syncTeacherOptions);
+  if (assistantSelect) assistantSelect.addEventListener("change", syncTeacherOptions);
+  syncTeacherOptions();
+})();
+</script>
+{% else %}
+  <p>House teacher:
+    {% if house_teacher %}
+      <a href="{% url 'admin:accounts_user_profile' house_teacher.staff_id %}">{{ house_teacher.staff }}</a>
+    {% else %}
+      Not assigned
+    {% endif %}
+  </p>
+  {% if show_assistant_house_teacher %}
+    <p>Assistant house teacher:
+      {% if assistant_house_teacher %}
+        <a href="{% url 'admin:accounts_user_profile' assistant_house_teacher.staff_id %}">{{ assistant_house_teacher.staff }}</a>
+      {% else %}
+        Not assigned
+      {% endif %}
+    </p>
+  {% endif %}
+{% endif %}
+</div>
+{% endblock %}

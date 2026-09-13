@@ -1,0 +1,50 @@
+{% extends "portal/inner.html" %}
+{% block title %}Houses · {{ vidyalaya.short_name|default:"JNV" }}{% endblock %}
+{% block panel %}
+  <h1>Houses, offices, and cup</h1>
+  <p class="muted">{% if year %}{{ year }} · {% endif %}Inter-house points and student leadership (captains, prefects).</p>
+  <h2>House cup</h2>
+  <table class="data">
+    <thead><tr><th>House</th><th>Points</th></tr></thead>
+    <tbody>
+      {% for row in totals %}
+      <tr><td>{{ row.house__name }}</td><td>{{ row.total }}</td></tr>
+      {% empty %}
+      <tr><td colspan="2">No results.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <h2>Fixtures</h2>
+  <table class="data">
+    <thead><tr><th>Date</th><th>Event</th><th>House</th><th>Position</th><th>Points</th></tr></thead>
+    <tbody>
+      {% for row in competitions %}
+      <tr>
+        <td>{{ row.competition.held_on }}</td>
+        <td>{{ row.competition.name }}</td>
+        <td>{{ row.house }}</td>
+        <td>{{ row.position }}</td>
+        <td>{{ row.points }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5">No fixtures.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <h2>Student offices</h2>
+  <table class="data">
+    <thead><tr><th>Role</th><th>Student</th><th>Class</th><th>House</th></tr></thead>
+    <tbody>
+      {% for item in offices %}
+      <tr>
+        <td>{{ item.get_role_display }}</td>
+        <td>{{ item.student.full_name }}</td>
+        <td>{{ item.student.class_section }}</td>
+        <td>{% if item.house %}{{ item.house }}{% else %}—{% endif %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4">No offices assigned.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

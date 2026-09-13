@@ -1,0 +1,58 @@
+{% extends "portal/inner.html" %}
+{% block title %}Mess · {{ vidyalaya.display_name|default:"JNV" }}{% endblock %}
+{% block panel %}
+  <div class="page-head">
+    <div>
+      <h1>Mess menu</h1>
+      <p class="muted">Four meals as served in the Balikudia mess. Sunday often carries a special item.</p>
+    </div>
+    <form class="filters" method="get">
+      <label>Date
+        <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+      </label>
+      <button class="btn" type="submit">Show</button>
+    </form>
+  </div>
+  {% if menu %}
+    <div class="meal-grid">
+      <dl class="meal-card"><dt>Breakfast</dt><dd>{{ menu.breakfast }}</dd></dl>
+      <dl class="meal-card"><dt>Lunch</dt><dd>{{ menu.lunch }}</dd></dl>
+      <dl class="meal-card"><dt>Evening snacks</dt><dd>{{ menu.evening_snacks }}</dd></dl>
+      <dl class="meal-card"><dt>Dinner</dt><dd>{{ menu.dinner }}</dd></dl>
+    </div>
+    {% if menu.note %}<p class="banner">{{ menu.note }}</p>{% endif %}
+  {% else %}
+    <p>No menu for {{ selected_date }}.</p>
+  {% endif %}
+{% endblock %}
+{% block extra %}
+<div class="panel">
+  <h2>Coming days</h2>
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Breakfast</th>
+          <th>Lunch</th>
+          <th>Evening</th>
+          <th>Dinner</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in upcoming %}
+        <tr>
+          <td>{{ item.date }}</td>
+          <td>{{ item.breakfast }}</td>
+          <td>{{ item.lunch }}</td>
+          <td>{{ item.evening_snacks }}</td>
+          <td>{{ item.dinner }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">No upcoming menus.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

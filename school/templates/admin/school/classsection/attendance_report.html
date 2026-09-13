@@ -12,6 +12,8 @@
 {% endblock %}
 
 {% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
 <p class="report-meta">{{ class_section }} · Class attendance report</p>
 
 <form method="get" class="report-form">
@@ -88,4 +90,5 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% endblock %}

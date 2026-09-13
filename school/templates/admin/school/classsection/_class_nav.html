@@ -1,0 +1,6 @@
+<nav class="jnv-section-nav" aria-label="Class sections">
+  <a href="{{ overview_url }}"{% if current_class_section == "home" %} aria-current="page"{% endif %}>Staffs</a>
+  <a href="{{ students_url }}"{% if current_class_section == "students" %} aria-current="page"{% endif %}>Students</a>
+  <a href="{{ attendance_url }}"{% if current_class_section == "attendance" %} aria-current="page"{% endif %}>Attendance</a>
+  <a href="{{ routine_url }}"{% if current_class_section == "routine" %} aria-current="page"{% endif %}>Routine</a>
+</nav>

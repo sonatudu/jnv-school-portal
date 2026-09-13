@@ -1,0 +1,74 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
+<p>
+  {% if can_edit %}
+    <a href="{{ edit_url }}">Edit account</a>
+  {% endif %}
+</p>
+
+<h1>{{ profile_user.get_full_name|default:profile_user.username }}</h1>
+
+<h2>Biodata</h2>
+<table>
+  <tr><th>Username</th><td>{{ profile_user.username }}</td></tr>
+  <tr><th>Full name</th><td>{{ profile_user.get_full_name|default:"—" }}</td></tr>
+  <tr><th>First name</th><td>{{ profile_user.first_name|default:"—" }}</td></tr>
+  <tr><th>Last name</th><td>{{ profile_user.last_name|default:"—" }}</td></tr>
+  <tr><th>Email</th><td>{{ profile_user.email|default:"—" }}</td></tr>
+  <tr><th>Category</th><td>{{ profile_user.get_category_display }}</td></tr>
+  <tr><th>Designation</th><td>{{ profile_user.designation|default:"—" }}</td></tr>
+  <tr><th>Active</th><td>{{ profile_user.is_active|yesno:"Yes,No" }}</td></tr>
+  <tr><th>Admin login</th><td>{{ profile_user.is_staff|yesno:"Yes,No" }}</td></tr>
+  <tr><th>Superuser</th><td>{{ profile_user.is_superuser|yesno:"Yes,No" }}</td></tr>
+  <tr><th>Teacher profile</th><td>{% if profile.teacher_profile %}Yes{% else %}No{% endif %}</td></tr>
+  <tr><th>Last login</th><td>{{ profile_user.last_login|default:"—" }}</td></tr>
+  <tr><th>Date joined</th><td>{{ profile_user.date_joined }}</td></tr>
+</table>
+
+{% include "admin/includes/extra_biodata.html" %}
+
+{% if profile.class_roles %}
+<h2>Class roles ({{ profile.year }})</h2>
+<ul>
+  {% for item in profile.class_roles %}
+    <li>{{ item.get_role_display }} — {{ item.class_section }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if profile.house_roles %}
+<h2>House roles ({{ profile.year }})</h2>
+<ul>
+  {% for item in profile.house_roles %}
+    <li>{{ item.get_role_display }} — {{ item.house }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if profile.teaching %}
+<h2>Teaching assignments ({{ profile.year }})</h2>
+<ul>
+  {% for item in profile.teaching %}
+    <li>{{ item.subject }} — {{ item.class_section }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2>Tasks today ({{ profile.today }})</h2>
+<ul>
+  {% for task in profile.tasks %}
+    <li>{{ task }}</li>
+  {% endfor %}
+</ul>
+
+<h2>Permissions this role should have</h2>
+<ul>
+  {% for item in profile.permissions %}
+    <li>{{ item }}</li>
+  {% endfor %}
+</ul>
+</div>
+{% endblock %}

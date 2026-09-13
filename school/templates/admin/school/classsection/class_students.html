@@ -1,0 +1,304 @@
+{% extends "admin/base_site.html" %}
+{% block bodyclass %}{{ block.super }} jnv-hub{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
+{% include "admin/includes/year_row.html" with opened_name=class_section.display_name %}
+
+{% include "admin/school/classsection/_class_nav.html" %}
+
+<div class="jnv-class-toolbar{% if table_edit %} is-editing{% endif %}">
+  {% if can_edit and table_edit %}
+    <div class="jnv-edit-toolbar" data-students-history data-class-id="{{ class_section.pk }}"{% if selected_year %} data-year-id="{{ selected_year.pk }}"{% endif %}>
+      <div class="jnv-edit-group">
+        <form method="post" class="jnv-inline-form" data-history-undo-form>
+          {% include "admin/school/classsection/_table_hiddens.html" %}
+          <input type="hidden" name="table_action" value="undo">
+          <button type="submit" class="jnv-edit-tool jnv-edit-tool-icon"{% if not can_undo %} disabled{% endif %} aria-label="Undo" title="Undo"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.7 2.9L3 13"/></svg></button>
+        </form>
+        <form method="post" class="jnv-inline-form" data-history-redo-form>
+          {% include "admin/school/classsection/_table_hiddens.html" %}
+          <input type="hidden" name="table_action" value="redo">
+          <button type="submit" class="jnv-edit-tool jnv-edit-tool-icon"{% if not can_redo %} disabled{% endif %} aria-label="Redo" title="Redo"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6.7 2.9L21 13"/></svg></button>
+        </form>
+      </div>
+      <div class="jnv-edit-group">
+        <button type="button" class="jnv-edit-tool" data-table-pan="left" aria-label="Scroll table left" title="Scroll table left"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>Left</button>
+        <button type="button" class="jnv-edit-tool" data-table-pan="right" aria-label="Scroll table right" title="Scroll table right">Right<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+      </div>
+      <form method="post" class="jnv-column-add jnv-edit-group" data-history="add-column">
+        {% include "admin/school/classsection/_table_hiddens.html" %}
+        <input type="hidden" name="field_type" value="text">
+        <input type="text" name="label" maxlength="120" required placeholder="Column name" aria-label="Column name">
+        <button type="submit" name="column_action" value="add">Add column</button>
+      </form>
+      {% if hidden_columns %}
+      <div class="jnv-hidden-columns jnv-edit-group" aria-label="Hidden columns">
+        {% for column in hidden_columns %}
+        <form method="post" class="jnv-inline-form" data-history="show-column">
+          {% include "admin/school/classsection/_table_hiddens.html" %}
+          <input type="hidden" name="column_key" value="{{ column.key }}">
+          <button type="submit" name="table_action" value="show_column">Show {{ column.label }}</button>
+        </form>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="jnv-edit-group">
+        <a class="jnv-class-search-toggle jnv-class-done" href="?{{ students_view_query }}" aria-label="Done editing table">Done</a>
+      </div>
+    </div>
+  {% endif %}
+  <div class="jnv-class-toolbar-end">
+    <form method="get" class="jnv-class-search{% if search_query %} is-open{% endif %}" role="search"{% if search_query %} data-has-query="1"{% endif %}>
+      {% if selected_year %}
+      <input type="hidden" name="academic_year" value="{{ selected_year.pk }}">
+      {% endif %}
+      {% if table_edit %}
+      <input type="hidden" name="edit" value="1">
+      {% endif %}
+      <input id="class-student-q" type="search" name="q" value="{{ search_query }}" placeholder="Name, admission no., or roll" aria-label="Search students in this class"{% if not search_query %} hidden{% endif %}>
+      <button type="button" class="jnv-class-search-toggle" aria-label="Search students" aria-expanded="{% if search_query %}true{% else %}false{% endif %}" aria-controls="class-student-q">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      </button>
+    </form>
+    {% if can_edit and not table_edit %}
+    <a class="jnv-class-search-toggle jnv-class-columns-toggle" href="?{{ students_edit_query }}" aria-label="Edit table columns">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    </a>
+    {% endif %}
+  </div>
+</div>
+<script>
+(function () {
+  function ready(fn) {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", fn);
+    } else {
+      fn();
+    }
+  }
+  ready(function () {
+  var form = document.querySelector(".jnv-class-search");
+  if (form) {
+    var input = form.querySelector("#class-student-q");
+    var btn = form.querySelector(".jnv-class-search-toggle");
+    var hasQuery = form.getAttribute("data-has-query") === "1";
+
+    function openField() {
+      form.classList.add("is-open");
+      input.hidden = false;
+      btn.setAttribute("aria-expanded", "true");
+      input.focus();
+    }
+    function closeField() {
+      form.classList.remove("is-open");
+      input.hidden = true;
+      btn.setAttribute("aria-expanded", "false");
+    }
+
+    btn.addEventListener("click", function () {
+      if (!form.classList.contains("is-open")) {
+        openField();
+        return;
+      }
+      if (input.value.trim() || hasQuery) {
+        form.submit();
+        return;
+      }
+      closeField();
+    });
+  }
+
+  document.querySelectorAll("form[data-confirm]").forEach(function (item) {
+    item.addEventListener("submit", function (event) {
+      if (!window.confirm(item.getAttribute("data-confirm"))) {
+        event.preventDefault();
+      }
+    });
+  });
+
+  {% if table_edit %}
+  var toolbar = document.querySelector("[data-students-history]");
+  var wrap = document.querySelector("[data-students-scroll]");
+  if (toolbar) {
+    var undoForm = toolbar.querySelector("[data-history-undo-form]");
+    var redoForm = toolbar.querySelector("[data-history-redo-form]");
+    var undoBtn = undoForm ? undoForm.querySelector("button") : null;
+    var redoBtn = redoForm ? redoForm.querySelector("button") : null;
+    var panLeft = toolbar.querySelector("[data-table-pan='left']");
+    var panRight = toolbar.querySelector("[data-table-pan='right']");
+    var panStep = 240;
+
+    function submitHistory(form, button) {
+      if (!form || !button || button.disabled) {
+        return;
+      }
+      if (typeof form.requestSubmit === "function") {
+        form.requestSubmit(button);
+      } else {
+        form.submit();
+      }
+    }
+
+    function isEditableTarget(target) {
+      if (!target) {
+        return false;
+      }
+      var tag = (target.tagName || "").toLowerCase();
+      return tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable;
+    }
+
+    function tagIsTextInput(target) {
+      var tag = (target.tagName || "").toLowerCase();
+      if (tag === "textarea") {
+        return true;
+      }
+      if (tag !== "input") {
+        return false;
+      }
+      var type = (target.type || "text").toLowerCase();
+      return type === "text" || type === "search" || type === "number" || type === "date";
+    }
+
+    function updatePanButtons() {
+      if (!wrap || !panLeft || !panRight) {
+        return;
+      }
+      var maxScroll = wrap.scrollWidth - wrap.clientWidth;
+      panLeft.disabled = wrap.scrollLeft <= 0;
+      panRight.disabled = maxScroll <= 1 || wrap.scrollLeft >= maxScroll - 1;
+    }
+
+    function panTable(direction) {
+      if (!wrap) {
+        return;
+      }
+      wrap.scrollBy({ left: direction * panStep, behavior: "smooth" });
+    }
+
+    if (panLeft) {
+      panLeft.addEventListener("click", function () {
+        panTable(-1);
+      });
+    }
+    if (panRight) {
+      panRight.addEventListener("click", function () {
+        panTable(1);
+      });
+    }
+    if (wrap) {
+      wrap.addEventListener("scroll", updatePanButtons, { passive: true });
+      window.addEventListener("resize", updatePanButtons);
+      updatePanButtons();
+    }
+
+    document.addEventListener("keydown", function (event) {
+      var key = event.key || "";
+      var isUndo = (key === "z" || key === "Z") && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey;
+      var isRedo =
+        ((key === "y" || key === "Y") && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey) ||
+        ((key === "z" || key === "Z") && event.metaKey && event.shiftKey && !event.altKey);
+      if (!isUndo && !isRedo) {
+        return;
+      }
+      var target = event.target;
+      if (isEditableTarget(target)) {
+        if (target.closest(".jnv-class-search")) {
+          return;
+        }
+        if (tagIsTextInput(target) && target.value !== target.defaultValue) {
+          return;
+        }
+      }
+      event.preventDefault();
+      if (isUndo) {
+        submitHistory(undoForm, undoBtn);
+      } else {
+        submitHistory(redoForm, redoBtn);
+      }
+    });
+  }
+  {% endif %}
+  });
+})();
+</script>
+
+<div class="jnv-students-table-wrap{% if table_edit %} is-editing{% endif %}" data-students-scroll>
+<table class="jnv-students-table">
+  <thead>
+    <tr>
+      {% if table_edit %}
+      <th class="jnv-row-actions-col jnv-sticky-handle"><span class="jnv-visually-hidden">Row actions</span></th>
+      {% endif %}
+      {% for column in table_columns %}
+      <th{% if column.key == "full_name" %} class="jnv-sticky-name"{% endif %}>{% if table_edit %}<div class="jnv-col-head"><form method="post" class="jnv-inline-form" data-history="move-column">{% include "admin/school/classsection/_table_hiddens.html" %}<input type="hidden" name="column_key" value="{{ column.key }}"><input type="hidden" name="direction" value="left"><button type="submit" name="table_action" value="move_column" class="jnv-handle" aria-label="Move {{ column.label }} left"{% if forloop.first %} disabled{% endif %}>←</button></form><span>{{ column.label }}</span><form method="post" class="jnv-inline-form" data-history="move-column">{% include "admin/school/classsection/_table_hiddens.html" %}<input type="hidden" name="column_key" value="{{ column.key }}"><input type="hidden" name="direction" value="right"><button type="submit" name="table_action" value="move_column" class="jnv-handle" aria-label="Move {{ column.label }} right"{% if forloop.last %} disabled{% endif %}>→</button></form>{% if column.is_builtin %}<form method="post" class="jnv-inline-form" data-history="hide-column">{% include "admin/school/classsection/_table_hiddens.html" %}<input type="hidden" name="column_key" value="{{ column.key }}"><button type="submit" name="table_action" value="hide_column" class="jnv-handle" aria-label="Hide {{ column.label }}">×</button></form>{% else %}<form method="post" class="jnv-inline-form" data-history="delete-column" data-column-label="{{ column.label }}" data-confirm="Delete the “{{ column.label }}” column from every class Students table?">{% include "admin/school/classsection/_table_hiddens.html" %}<input type="hidden" name="column_id" value="{{ column.column_id }}"><button type="submit" name="column_action" value="delete" class="jnv-handle" aria-label="Delete {{ column.label }}">×</button></form>{% endif %}</div>{% else %}{{ column.label }}{% endif %}</th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for student in students %}
+    <tr>
+      {% if table_edit %}
+      <td class="jnv-row-actions jnv-sticky-handle">
+        <form method="post" class="jnv-inline-form" data-history="move-row">
+          {% include "admin/school/classsection/_table_hiddens.html" %}
+          <input type="hidden" name="student_id" value="{{ student.pk }}">
+          <input type="hidden" name="direction" value="up">
+          <button type="submit" name="table_action" value="move_row" class="jnv-handle" aria-label="Move row up"{% if not student.can_move_up %} disabled{% endif %}>↑</button>
+        </form>
+        <form method="post" class="jnv-inline-form" data-history="move-row">
+          {% include "admin/school/classsection/_table_hiddens.html" %}
+          <input type="hidden" name="student_id" value="{{ student.pk }}">
+          <input type="hidden" name="direction" value="down">
+          <button type="submit" name="table_action" value="move_row" class="jnv-handle" aria-label="Move row down"{% if not student.can_move_down %} disabled{% endif %}>↓</button>
+        </form>
+        <form method="post" class="jnv-inline-form" data-history="delete-row" data-confirm="Remove {{ student.full_name }} from this class? The student record is kept.">
+          {% include "admin/school/classsection/_table_hiddens.html" %}
+          <input type="hidden" name="student_id" value="{{ student.pk }}">
+          <button type="submit" name="table_action" value="delete_row" class="jnv-handle" aria-label="Remove {{ student.full_name }} from class">×</button>
+        </form>
+      </td>
+      {% endif %}
+      {% for cell in student.table_cells %}
+      <td{% if cell.is_name and table_edit and cell.input == "select" %} class="jnv-sticky-name jnv-select-cell"{% elif cell.is_name %} class="jnv-sticky-name"{% elif table_edit and cell.input == "select" %} class="jnv-select-cell"{% endif %}>
+        {% if table_edit %}
+        <form method="post" class="jnv-cell-form" data-history="save-cell" data-original="{{ cell.edit_value }}">
+          {% include "admin/school/classsection/_table_hiddens.html" %}
+          <input type="hidden" name="student_id" value="{{ student.pk }}">
+          <input type="hidden" name="column_key" value="{{ cell.key }}">
+          <input type="hidden" name="table_action" value="save_cell">
+          {% if cell.input == "select" %}
+          <select name="value" aria-label="{{ student.full_name }} {{ cell.key }}" onchange="this.form.submit()">
+            {% for choice_value, choice_label in cell.choices %}
+            <option value="{{ choice_value }}"{% if cell.edit_value == choice_value %} selected{% endif %}>{{ choice_label }}</option>
+            {% endfor %}
+          </select>
+          {% elif cell.input == "date" %}
+          <input type="date" name="value" value="{{ cell.edit_value }}" aria-label="{{ student.full_name }} date of birth" onchange="this.form.submit()">
+          {% elif cell.input == "number" %}
+          <input type="number" name="value" min="1" value="{{ cell.edit_value }}" aria-label="{{ student.full_name }} roll" onchange="this.form.submit()">
+          {% else %}
+          <input type="text" name="value" value="{{ cell.edit_value }}" aria-label="{{ student.full_name }} {{ cell.key }}" onchange="this.form.submit()">
+          {% endif %}
+          <button type="submit" class="jnv-visually-hidden">Save</button>
+        </form>
+        {% elif cell.is_admission %}
+        <a href="{% url 'admin:school_student_biodata' student.pk %}?from_class={{ class_section.pk }}">{{ cell.display }}</a>
+        {% elif cell.is_name %}
+        <a href="{% url 'admin:school_student_biodata' student.pk %}?from_class={{ class_section.pk }}">{{ cell.display }}</a>
+        {% else %}
+        {{ cell.display }}
+        {% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+    {% empty %}
+    <tr><td colspan="{% if table_edit %}{{ table_columns|length|add:1 }}{% else %}{{ table_columns|length }}{% endif %}">{% if search_query %}No students match this search.{% else %}No students in this class for the selected year.{% endif %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+</div>
+{% endblock %}

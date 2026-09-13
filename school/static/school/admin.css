@@ -1,0 +1,1618 @@
+/* JNV East Singhbhum — restrained administration skin */
+:root {
+  --jnv-navy: #12263a;
+  --jnv-navy-mid: #1b334c;
+  --jnv-navy-dark: #0b1826;
+  --jnv-gold: #8a7340;
+  --jnv-paper: #ffffff;
+  --jnv-page: #f3f5f7;
+  --jnv-line: #d5dbe3;
+  --jnv-ink: #1c2430;
+  --jnv-muted: #5c6773;
+  --jnv-sans: "Source Sans 3", "Segoe UI", sans-serif;
+}
+
+html[data-theme="light"],
+:root {
+  --primary: var(--jnv-navy);
+  --secondary: var(--jnv-navy-mid);
+  --accent: var(--jnv-gold);
+  --primary-fg: #fff;
+  --body-fg: var(--jnv-ink);
+  --body-quiet-color: var(--jnv-muted);
+  --body-bg: var(--jnv-page);
+  --darkened-bg: #e8edf2;
+  --selected-bg: #eef2f6;
+  --selected-row: #f7f9fb;
+  --border-color: var(--jnv-line);
+  --hairline-color: var(--jnv-line);
+  --link-fg: #1a3d5c;
+  --link-hover-color: var(--jnv-navy);
+  --button-bg: var(--jnv-navy);
+  --button-fg: #fff;
+  --button-hover-bg: var(--jnv-navy-mid);
+  --default-button-bg: var(--jnv-navy);
+  --default-button-hover-bg: var(--jnv-navy-mid);
+  --header-bg: var(--jnv-navy-dark);
+  --header-color: #fff;
+  --header-link-color: #d7e0e9;
+  --breadcrumbs-bg: var(--jnv-navy-mid);
+  --breadcrumbs-fg: #d7e0e9;
+  --breadcrumbs-link-fg: #e8eef5;
+}
+
+body.jnv-admin {
+  font-family: var(--jnv-sans);
+  background: var(--jnv-page);
+  color: var(--jnv-ink);
+}
+
+#header {
+  background: var(--jnv-navy-dark);
+  color: #fff;
+  border-bottom: 1px solid #2a4158;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  padding: 0.55rem 1.1rem 0.4rem;
+}
+
+#branding h1,
+#branding h1 a:link,
+#branding h1 a:visited,
+#branding h1 a:hover,
+#branding h1 a:focus,
+#branding h1 a:focus-visible,
+#branding h1 a:active,
+#site-name a,
+#site-name a:link,
+#site-name a:visited,
+#site-name a:hover,
+#site-name a:focus,
+#site-name a:focus-visible,
+#site-name a:active {
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.jnv-branding a,
+.jnv-branding a:link,
+.jnv-branding a:visited,
+.jnv-branding a:hover,
+.jnv-branding a:focus,
+.jnv-branding a:focus-visible,
+.jnv-branding a:active {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.7rem;
+  line-height: 1.2;
+  text-decoration: none;
+}
+.jnv-logo {
+  width: 2.65rem;
+  height: 2.65rem;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 2.65rem;
+  display: block;
+}
+.jnv-brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.04rem;
+  min-width: 0;
+}
+.jnv-brand-kicker {
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #a9b8c7;
+  font-weight: 650;
+}
+.jnv-brand-name {
+  font-size: 1.12rem;
+  font-weight: 700;
+}
+.jnv-brand-place {
+  font-size: 0.74rem;
+  color: #9aabbb;
+  font-weight: 400;
+}
+
+#user-tools { color: #b7c4d1; }
+#user-tools a,
+#user-tools a:link,
+#user-tools a:visited,
+#user-tools a:hover,
+#user-tools a:focus,
+#user-tools a:focus-visible,
+#user-tools a:active,
+#logout-form button {
+  color: #d7e0e9;
+  text-decoration: none;
+}
+
+.jnv-admin-nav {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  padding: 0;
+  border-top: 1px solid #2a4158;
+  margin-top: 0.3rem;
+}
+.jnv-admin-nav a,
+.jnv-admin-nav a:link,
+.jnv-admin-nav a:visited,
+.jnv-admin-nav a:hover,
+.jnv-admin-nav a:focus,
+.jnv-admin-nav a:focus-visible,
+.jnv-admin-nav a:active {
+  color: #c5d0db;
+  text-decoration: none;
+  font-size: 0.86rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 0;
+}
+.jnv-admin-nav a:hover,
+.jnv-admin-nav a:focus,
+.jnv-admin-nav a:focus-visible {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.jnv-opened,
+.jnv-desk {
+  background: #fff;
+  border: 1px solid var(--jnv-line);
+  border-radius: 2px;
+  padding: 0.85rem 1.1rem 1.15rem;
+  margin: 0 0 1.15rem;
+}
+.jnv-opened:has(> .back-link),
+.jnv-desk:has(> .back-link) {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  column-gap: 0.45rem;
+  align-items: start;
+}
+.jnv-opened:has(> .back-link) > :not(.back-link),
+.jnv-desk:has(> .back-link) > :not(.back-link) {
+  grid-column: 2;
+  min-width: 0;
+}
+a.back-link,
+a.back-link:link,
+a.back-link:visited,
+a.back-link:hover,
+a.back-link:focus,
+a.back-link:focus-visible,
+a.back-link:active,
+.jnv-section-nav a.back-link,
+.class-page-nav a.back-link,
+#content a.back-link {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  min-width: 1.25rem !important;
+  max-width: 1.25rem !important;
+  margin: 0.2rem 0 0 !important;
+  padding: 0 !important;
+  color: var(--jnv-muted) !important;
+  background: none !important;
+  border: 1px solid currentColor !important;
+  border-radius: 50% !important;
+  text-decoration: none !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+  box-shadow: none !important;
+  position: static !important;
+  transform: none !important;
+}
+.jnv-opened > .back-link,
+.jnv-desk > .back-link {
+  grid-column: 1;
+  grid-row: 1;
+}
+a.back-link:hover,
+a.back-link:focus,
+a.back-link:focus-visible {
+  color: var(--jnv-navy) !important;
+  background: none !important;
+}
+.back-link-icon {
+  width: 10px !important;
+  height: 10px !important;
+  display: block;
+}
+
+ol.breadcrumbs,
+.breadcrumbs {
+  background: var(--jnv-navy-mid) !important;
+  color: #d7e0e9 !important;
+  padding: 0.45rem 1.1rem;
+}
+ol.breadcrumbs a,
+ol.breadcrumbs a:link,
+ol.breadcrumbs a:visited,
+ol.breadcrumbs a:hover,
+ol.breadcrumbs a:focus,
+ol.breadcrumbs a:focus-visible,
+ol.breadcrumbs a:active,
+.breadcrumbs a,
+.breadcrumbs a:link,
+.breadcrumbs a:visited,
+.breadcrumbs a:hover,
+.breadcrumbs a:focus,
+.breadcrumbs a:focus-visible,
+.breadcrumbs a:active {
+  color: #e8eef5 !important;
+  text-decoration: none !important;
+  border-bottom: 0;
+}
+
+#nav-sidebar {
+  background: #fff;
+  border-right: 1px solid var(--jnv-line);
+}
+#nav-sidebar .current-app .section:link,
+#nav-sidebar .current-app .section:visited,
+#nav-filter {
+  background: var(--jnv-navy);
+  color: #fff;
+}
+
+#content { padding-top: 0.9rem; }
+#content h1,
+#content .titles h1 {
+  font-family: var(--jnv-sans);
+  color: var(--jnv-navy);
+  font-weight: 700;
+  font-size: 1.35rem;
+}
+body.jnv-admin.jnv-hub #content h1,
+body.jnv-admin.jnv-hub .titles-and-tools {
+  display: none;
+}
+#content h2 {
+  font-family: var(--jnv-sans);
+  color: var(--jnv-navy);
+  font-weight: 700;
+  margin-top: 1.2rem;
+  font-size: 1.05rem;
+}
+fieldset.module > h2,
+.module > h2,
+.module caption,
+.inline-group h2,
+#changelist-filter h2,
+#content-related .module h2,
+.app-list .module caption,
+.app-list .module h2 {
+  background: var(--jnv-navy) !important;
+  color: #fff !important;
+  font-family: var(--jnv-sans);
+  letter-spacing: 0.04em;
+  font-weight: 650;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.module {
+  border: 1px solid var(--jnv-line);
+  border-radius: 0;
+  overflow: hidden;
+  box-shadow: none;
+  background: var(--jnv-paper);
+}
+
+.app-list .module table th,
+.app-list .module table td {
+  background: var(--jnv-paper);
+}
+
+.button,
+input[type="submit"],
+input[type="button"],
+.submit-row input,
+.submit-row button,
+a.button,
+button.default {
+  border-radius: 0 !important;
+  font-family: var(--jnv-sans);
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: none !important;
+  box-shadow: none;
+}
+
+.submit-row {
+  padding: 0.9rem 0 0;
+  margin: 0.35rem 0 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--jnv-line);
+  border-radius: 0;
+  overflow: visible;
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.submit-row input,
+.submit-row input.default,
+.submit-row button,
+.submit-row button.default,
+.button.default,
+input[type="submit"].default,
+button.default {
+  background: var(--jnv-navy) !important;
+  color: #fff !important;
+  border: 1px solid var(--jnv-navy) !important;
+  border-radius: 0.25rem !important;
+  height: auto !important;
+  min-height: 0 !important;
+  line-height: 1.15;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.submit-row input:hover,
+.submit-row input:focus,
+.submit-row input.default:hover,
+.submit-row input.default:focus,
+.submit-row button:hover,
+.submit-row button:focus,
+.submit-row button.default:hover,
+.submit-row button.default:focus,
+.button.default:hover,
+.button.default:focus,
+input[type="submit"].default:hover,
+input[type="submit"].default:focus,
+button.default:hover,
+button.default:focus {
+  background: var(--jnv-navy-mid) !important;
+  border-color: var(--jnv-navy-mid) !important;
+}
+body.jnv-admin a,
+body.jnv-admin a:link,
+body.jnv-admin a:visited,
+body.jnv-admin a:hover,
+body.jnv-admin a:focus,
+body.jnv-admin a:focus-visible,
+body.jnv-admin a:active,
+#header a:link,
+#header a:visited,
+#header a:hover,
+#header a:focus,
+#header a:focus-visible,
+#header a:active,
+#content a,
+#content a:link,
+#content a:visited,
+#content a:hover,
+#content a:focus,
+#content a:focus-visible,
+#content a:active,
+#content table a,
+#result_list a,
+.jnv-directory a,
+.historylink,
+.historylink:link,
+.historylink:visited,
+.historylink:hover,
+.historylink:focus,
+a.section:link,
+a.section:visited,
+a.section:hover,
+a.section:focus,
+#logout-form button {
+  text-decoration: none !important;
+}
+a:link, a:visited { color: #1a3d5c; }
+a:hover,
+a:focus,
+a:focus-visible { color: var(--jnv-navy); }
+
+#changelist-filter {
+  background: var(--jnv-paper);
+  border-radius: 0;
+  border: 1px solid var(--jnv-line);
+}
+#changelist .actions { background: #eef2f6; }
+
+#result_list thead th,
+.results table thead th,
+#content > table thead th,
+#content form table thead th,
+.jnv-students-table thead th {
+  background: #eef2f6;
+  color: var(--jnv-navy);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+}
+#result_list tbody tr:hover,
+#content table tbody tr:hover { background: #f7f9fb; }
+
+#content > table,
+#content form > table,
+.class-attendance-table,
+.attendance-table,
+.overview-table,
+.register-table,
+.jnv-students-table,
+.jnv-directory {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--jnv-paper);
+  border: 1px solid var(--jnv-line);
+}
+#content > table th,
+#content > table td,
+#content form > table th,
+#content form > table td,
+.class-attendance-table th,
+.class-attendance-table td,
+.jnv-students-table th,
+.jnv-students-table td,
+.jnv-directory th,
+.jnv-directory td {
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--jnv-line);
+  vertical-align: top;
+}
+
+#content > form[method="get"],
+.audit-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0 0 0.55rem;
+  margin: 0 0 0.45rem;
+}
+
+#content > form[method="get"] label,
+.audit-form label {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  font-size: 0.72rem;
+  font-weight: 650;
+  gap: 0.85rem;
+  color: var(--jnv-navy);
+}
+
+body.jnv-admin select,
+body.jnv-admin .actions select,
+body.jnv-admin .related-widget-wrapper select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  font-family: var(--jnv-sans);
+  font-size: 0.88rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  color: var(--jnv-ink);
+  background-color: #fff;
+  border: 1px solid var(--jnv-line);
+  border-radius: 0;
+  min-height: 1.55rem;
+  height: auto;
+  padding: 0.12rem 1.5rem 0.12rem 0.45rem;
+  line-height: 1.3;
+  max-width: 100%;
+  vertical-align: middle;
+  box-shadow: none;
+  margin: 0;
+  cursor: pointer;
+  color-scheme: light;
+  transition: border-color 0.12s ease;
+}
+
+body.jnv-admin select::-ms-expand { display: none; }
+
+body.jnv-admin select:hover,
+body.jnv-admin .actions select:hover {
+  border-color: #b7c0c9;
+  background-color: #fff;
+}
+
+body.jnv-admin select:focus,
+body.jnv-admin select:focus-visible,
+body.jnv-admin .actions select:focus,
+body.jnv-admin .actions select:focus-visible {
+  outline: none;
+  border-color: var(--jnv-navy);
+}
+
+body.jnv-admin select:disabled {
+  color: var(--jnv-muted);
+  background-color: #f3f5f7;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+body.jnv-admin select option {
+  color: var(--jnv-ink);
+  background-color: #fff;
+  font-weight: 400;
+}
+
+body.jnv-admin select[multiple],
+body.jnv-admin select[size]:not([size="1"]) {
+  appearance: auto;
+  -webkit-appearance: auto;
+  background-image: none;
+  padding-right: 0.55rem;
+  min-height: 6rem;
+  cursor: default;
+}
+
+body.jnv-admin .form-row select {
+  min-width: 16rem;
+}
+
+body.jnv-admin .actions select {
+  min-height: 1.9rem;
+  font-size: 0.84rem;
+  margin-left: 0.5rem;
+}
+
+#content > form[method="get"] input[type="date"],
+.audit-form input[type="date"],
+.jnv-year-form input[type="date"] {
+  min-height: 1.55rem;
+  font-family: var(--jnv-sans);
+  color: var(--jnv-ink);
+  border-radius: 0;
+  border: 1px solid var(--jnv-line);
+  border-radius: 2px;
+  padding: 0.32rem 0.5rem;
+  background: #fff;
+}
+
+.jnv-year-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: 2.25rem;
+  row-gap: 0.4rem;
+  margin: 0 0 0.85rem;
+  padding: 0;
+}
+.jnv-opened-name {
+  margin: 0;
+  padding: 0;
+  color: var(--jnv-navy);
+  font-family: var(--jnv-sans);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  border: 0;
+  background: none;
+}
+.jnv-year-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.65rem 1.1rem;
+  margin: 0;
+  padding: 0;
+  flex: 0 1 auto;
+}
+.jnv-year-field,
+.jnv-year-form label {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.55rem;
+  margin: 0;
+}
+.jnv-year-caption,
+.jnv-year-form label {
+  font-weight: 500;
+  cursor: default;
+}
+.jnv-year-field .jnv-year-caption {
+  font-size: 0.92rem;
+  line-height: 1.3;
+  color: var(--jnv-navy);
+}
+.jnv-year-form label,
+.jnv-year-form label .jnv-year-caption {
+  font-size: 0.72rem;
+  color: var(--jnv-muted);
+}
+.jnv-class-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.1rem;
+  margin: 0 0 0.75rem;
+}
+.jnv-class-toolbar-end {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.1rem;
+  margin-left: auto;
+}
+.jnv-class-toolbar.is-editing {
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  flex-wrap: wrap;
+}
+.jnv-class-search {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+.jnv-class-search input[type="search"] {
+  width: 16rem;
+  min-width: 0;
+  min-height: 1.7rem;
+  font-family: var(--jnv-sans);
+  font-size: 0.88rem;
+  color: var(--jnv-ink);
+  border: 1px solid var(--jnv-line);
+  border-radius: 2px;
+  padding: 0.28rem 0.5rem;
+  background: #fff;
+}
+
+.jnv-class-search input[type="search"]:focus,
+.jnv-class-search input[type="search"]:focus-visible {
+  outline: none;
+  border-color: var(--jnv-navy);
+}
+
+body.jnv-admin .jnv-class-search-toggle,
+#content .jnv-class-search-toggle {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 1.85rem !important;
+  height: 1.85rem !important;
+  min-width: 1.85rem !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  color: var(--jnv-navy) !important;
+  box-shadow: none !important;
+  text-decoration: none !important;
+  cursor: pointer;
+}
+
+body.jnv-admin .jnv-class-search-toggle:hover,
+body.jnv-admin .jnv-class-search-toggle:focus,
+body.jnv-admin .jnv-class-search-toggle:focus-visible,
+#content .jnv-class-search-toggle:hover,
+#content .jnv-class-search-toggle:focus,
+#content .jnv-class-search-toggle:focus-visible {
+  background: #e8edf2 !important;
+  color: var(--jnv-navy-dark) !important;
+  outline: none;
+  box-shadow: none !important;
+}
+
+.jnv-class-search-toggle svg {
+  display: block;
+  width: 1.05rem;
+  height: 1.05rem;
+}
+.jnv-class-columns-toggle[aria-expanded="true"] {
+  background: #e8edf2 !important;
+}
+
+body.jnv-admin .jnv-class-done,
+#content .jnv-class-done {
+  width: auto !important;
+  min-width: 2.6rem !important;
+  padding: 0 0.55rem !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em;
+  text-decoration: none !important;
+}
+
+.jnv-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.jnv-students-table-wrap {
+  --jnv-sticky-handle-width: 4.6rem;
+  overflow: auto;
+  max-height: calc(100vh - 14.5rem);
+  border: 1px solid var(--jnv-line);
+  background: var(--jnv-paper);
+}
+
+.jnv-students-table-wrap .jnv-students-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 0;
+  width: max-content;
+  min-width: 100%;
+}
+
+.jnv-students-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.jnv-students-table .jnv-sticky-handle {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #fff;
+}
+
+.jnv-students-table .jnv-sticky-name {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 9rem;
+  background: #fff;
+  box-shadow: 4px 0 8px -6px rgba(18, 38, 58, 0.28);
+}
+
+.jnv-students-table-wrap.is-editing .jnv-sticky-name {
+  left: var(--jnv-sticky-handle-width);
+}
+
+.jnv-students-table thead .jnv-sticky-handle,
+.jnv-students-table thead .jnv-sticky-name {
+  z-index: 5;
+  background: #eef2f6;
+}
+
+.jnv-students-table tbody tr:hover .jnv-sticky-handle,
+.jnv-students-table tbody tr:hover .jnv-sticky-name {
+  background: #f7f9fb;
+}
+
+.jnv-edit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.15rem;
+  min-width: 0;
+}
+.jnv-edit-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.55rem;
+}
+.jnv-edit-group:first-child {
+  padding-left: 0;
+}
+.jnv-edit-group + .jnv-edit-group {
+  border-left: 1px solid var(--jnv-line);
+}
+
+body.jnv-admin .jnv-edit-tool,
+#content .jnv-edit-tool,
+body.jnv-admin .jnv-edit-toolbar .jnv-column-add button,
+#content .jnv-edit-toolbar .jnv-column-add button,
+body.jnv-admin .jnv-edit-toolbar .jnv-hidden-columns button,
+#content .jnv-edit-toolbar .jnv-hidden-columns button {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  box-sizing: border-box;
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0.15rem 0.45rem !important;
+  border: 1px solid var(--jnv-line) !important;
+  border-radius: 0.25rem !important;
+  background: #fff !important;
+  color: var(--jnv-navy) !important;
+  box-shadow: none !important;
+  font-family: var(--jnv-sans);
+  font-size: 0.78rem !important;
+  font-weight: 650 !important;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+  text-decoration: none !important;
+  text-transform: none !important;
+  cursor: pointer;
+}
+
+body.jnv-admin .jnv-edit-tool svg,
+#content .jnv-edit-tool svg {
+  display: block;
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+body.jnv-admin .jnv-edit-tool-icon,
+#content .jnv-edit-tool-icon {
+  width: 1.7rem !important;
+  min-width: 1.7rem !important;
+  padding: 0.15rem !important;
+}
+
+body.jnv-admin .jnv-edit-tool-icon svg,
+#content .jnv-edit-tool-icon svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+body.jnv-admin .jnv-edit-tool:hover,
+body.jnv-admin .jnv-edit-tool:focus,
+body.jnv-admin .jnv-edit-tool:focus-visible,
+#content .jnv-edit-tool:hover,
+#content .jnv-edit-tool:focus,
+#content .jnv-edit-tool:focus-visible,
+body.jnv-admin .jnv-edit-toolbar .jnv-column-add button:hover,
+body.jnv-admin .jnv-edit-toolbar .jnv-column-add button:focus,
+#content .jnv-edit-toolbar .jnv-column-add button:hover,
+#content .jnv-edit-toolbar .jnv-column-add button:focus,
+body.jnv-admin .jnv-edit-toolbar .jnv-hidden-columns button:hover,
+#content .jnv-edit-toolbar .jnv-hidden-columns button:hover {
+  background: #e8edf2 !important;
+  color: var(--jnv-navy-dark) !important;
+  outline: none;
+  box-shadow: none !important;
+}
+
+body.jnv-admin .jnv-edit-tool:disabled,
+#content .jnv-edit-tool:disabled {
+  background: #fff !important;
+  color: #8a94a0 !important;
+  border-color: #e2e6eb !important;
+  cursor: default;
+  opacity: 1;
+}
+
+body.jnv-admin .jnv-class-toolbar.is-editing .jnv-class-done,
+#content .jnv-class-toolbar.is-editing .jnv-class-done {
+  width: auto !important;
+  min-width: 0 !important;
+  height: auto !important;
+  padding: 0.15rem 0.45rem !important;
+  border: 1px solid var(--jnv-line) !important;
+  border-radius: 0.25rem !important;
+  background: #fff !important;
+  color: var(--jnv-navy) !important;
+  font-size: 0.78rem !important;
+  font-weight: 650 !important;
+}
+
+body.jnv-admin .jnv-class-toolbar.is-editing .jnv-class-done:hover,
+body.jnv-admin .jnv-class-toolbar.is-editing .jnv-class-done:focus,
+#content .jnv-class-toolbar.is-editing .jnv-class-done:hover,
+#content .jnv-class-toolbar.is-editing .jnv-class-done:focus {
+  background: #e8edf2 !important;
+}
+
+.jnv-col-head,
+.jnv-row-actions,
+.jnv-hidden-columns,
+.jnv-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.jnv-col-head {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.jnv-col-head span {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 0.1rem;
+  color: var(--jnv-navy);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.jnv-row-actions-col {
+  width: var(--jnv-sticky-handle-width, 4.6rem);
+  min-width: var(--jnv-sticky-handle-width, 4.6rem);
+}
+
+.jnv-row-actions {
+  flex-wrap: nowrap;
+}
+
+.jnv-students-table td.jnv-row-actions {
+  display: table-cell;
+  white-space: nowrap;
+}
+
+.jnv-students-table td.jnv-row-actions .jnv-inline-form {
+  display: inline-flex;
+}
+
+.jnv-inline-form {
+  margin: 0;
+}
+
+body.jnv-admin .jnv-inline-form button,
+#content .jnv-inline-form button,
+body.jnv-admin .jnv-hidden-columns button,
+#content .jnv-hidden-columns button,
+body.jnv-admin .jnv-handle,
+#content .jnv-handle {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 1.35rem !important;
+  min-width: 1.35rem !important;
+  height: 1.35rem !important;
+  min-height: 1.35rem !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 1px solid var(--jnv-line) !important;
+  border-radius: 0.25rem !important;
+  background: #fff !important;
+  color: var(--jnv-navy) !important;
+  box-shadow: none !important;
+  font-family: var(--jnv-sans);
+  font-size: 0.72rem !important;
+  font-weight: 650 !important;
+  line-height: 1;
+  text-decoration: none !important;
+  cursor: pointer;
+}
+
+body.jnv-admin .jnv-inline-form button:hover,
+body.jnv-admin .jnv-inline-form button:focus,
+#content .jnv-inline-form button:hover,
+#content .jnv-inline-form button:focus,
+body.jnv-admin .jnv-handle:hover,
+body.jnv-admin .jnv-handle:focus,
+#content .jnv-handle:hover,
+#content .jnv-handle:focus,
+body.jnv-admin .jnv-hidden-columns button:hover,
+#content .jnv-hidden-columns button:hover {
+  background: #e8edf2 !important;
+  outline: none;
+  box-shadow: none !important;
+}
+
+body.jnv-admin .jnv-inline-form button:disabled,
+#content .jnv-inline-form button:disabled,
+body.jnv-admin .jnv-handle:disabled,
+#content .jnv-handle:disabled {
+  color: #b4bcc6 !important;
+  border-color: #e6eaef !important;
+  background: #fff !important;
+  cursor: default;
+}
+
+.jnv-hidden-columns {
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  color: var(--jnv-muted);
+  font-size: 0.78rem;
+}
+
+body.jnv-admin .jnv-edit-toolbar .jnv-hidden-columns button,
+#content .jnv-edit-toolbar .jnv-hidden-columns button {
+  width: auto !important;
+  min-width: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 0.15rem 0.45rem !important;
+}
+
+.jnv-cell-form {
+  margin: 0;
+}
+
+.jnv-cell-form input,
+.jnv-cell-form select {
+  width: 100%;
+  min-width: 5.5rem;
+  min-height: 1.55rem;
+  padding: 0.12rem 0.35rem;
+  border: 1px solid var(--jnv-line);
+  border-radius: 2px;
+  background: #fff;
+  color: var(--jnv-ink);
+  font-family: var(--jnv-sans);
+  font-size: 0.82rem;
+}
+
+.jnv-students-table-wrap.is-editing .jnv-students-table {
+  min-width: 100%;
+  border-color: #e2e6eb;
+}
+
+.jnv-students-table-wrap.is-editing .jnv-students-table th,
+.jnv-students-table-wrap.is-editing .jnv-students-table td {
+  padding: 0.28rem 0.4rem;
+  border-bottom-color: #e2e6eb;
+  vertical-align: middle;
+}
+
+.jnv-students-table-wrap.is-editing .jnv-students-table td.jnv-select-cell {
+  padding: 0.5rem 0.55rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.jnv-students-table-wrap.is-editing .jnv-select-cell .jnv-cell-form {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.jnv-students-table-wrap.is-editing .jnv-select-cell .jnv-cell-form select {
+  display: block;
+  width: auto;
+  max-width: calc(100% - 1rem);
+  min-width: 0;
+  margin: 0 auto;
+}
+
+.jnv-students-table-wrap.is-editing .jnv-select-cell .jnv-select {
+  display: inline-flex;
+  width: auto;
+  max-width: calc(100% - 1rem);
+  min-width: 0;
+  margin: 0 auto;
+}
+
+.jnv-students-table-wrap.is-editing .jnv-select-cell .jnv-select-btn,
+body.jnv-admin .jnv-students-table-wrap.is-editing .jnv-select-cell button.jnv-select-btn {
+  justify-content: center;
+  text-align: center;
+}
+
+.jnv-students-table-wrap.is-editing .jnv-students-table thead th,
+.jnv-students-table-wrap.is-editing .jnv-students-table thead .jnv-sticky-handle,
+.jnv-students-table-wrap.is-editing .jnv-students-table thead .jnv-sticky-name {
+  background: #f4f6f8;
+}
+
+.jnv-students-table-wrap.is-editing .jnv-students-table tbody .jnv-sticky-handle,
+.jnv-students-table-wrap.is-editing .jnv-students-table tbody .jnv-sticky-name {
+  background: #fff;
+}
+
+.jnv-column-editor {
+  margin: 0 0 0.85rem;
+  padding: 0.7rem 0.85rem 0.8rem;
+  border: 1px solid var(--jnv-line);
+  background: #f7f9fb;
+}
+.jnv-column-editor h2 {
+  margin: 0 0 0.35rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--jnv-navy);
+  font-family: var(--jnv-sans);
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+.jnv-column-editor p,
+.jnv-column-empty {
+  margin: 0 0 0.65rem;
+  color: var(--jnv-muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+.jnv-column-list {
+  list-style: none;
+  margin: 0 0 0.7rem;
+  padding: 0;
+}
+.jnv-column-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.28rem 0;
+  border-bottom: 1px solid var(--jnv-line);
+  color: var(--jnv-ink);
+  font-size: 0.88rem;
+}
+.jnv-column-list li:last-child {
+  border-bottom: 0;
+}
+.jnv-column-list form,
+.jnv-column-add {
+  margin: 0;
+}
+.jnv-column-list button,
+.jnv-column-add button {
+  min-height: 1.7rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--jnv-line);
+  border-radius: 2px;
+  background: #fff;
+  color: var(--jnv-navy);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.jnv-column-list button:hover,
+.jnv-column-add button:hover {
+  background: #e8edf2;
+}
+.jnv-column-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+.jnv-column-add label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  color: var(--jnv-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+.jnv-column-add input[type="text"],
+.jnv-column-add select {
+  min-height: 1.55rem;
+  min-width: 8.5rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--jnv-line);
+  border-radius: 2px;
+  background: #fff;
+  color: var(--jnv-ink);
+  font-family: var(--jnv-sans);
+  font-size: 0.82rem;
+}
+.jnv-edit-toolbar .jnv-column-add input[type="text"] {
+  min-width: 8rem;
+  width: 8.5rem;
+}
+
+.jnv-year-form select[name="academic_year"] {
+  border: 0;
+  background: none;
+  background-image: none;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  box-shadow: none;
+  color: var(--jnv-navy);
+  font-size: 0.92rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.jnv-section-nav,
+.class-page-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 0 0 1.1rem;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--jnv-line);
+  border-radius: 0;
+}
+.jnv-section-nav a,
+.jnv-section-nav a:link,
+.jnv-section-nav a:visited,
+.jnv-section-nav a:hover,
+.jnv-section-nav a:focus,
+.jnv-section-nav a:focus-visible,
+.jnv-section-nav a:active,
+.class-page-nav a,
+.class-page-nav a:link,
+.class-page-nav a:visited,
+.class-page-nav a:hover,
+.class-page-nav a:focus,
+.class-page-nav a:focus-visible,
+.class-page-nav a:active {
+  padding: 0.45rem 0.85rem;
+  border-radius: 0;
+  text-decoration: none;
+  color: var(--jnv-navy);
+  font-weight: 600;
+  border: 0;
+  border-bottom: 0;
+}
+.jnv-section-nav a:hover,
+.jnv-section-nav a:focus,
+.jnv-section-nav a:focus-visible,
+.class-page-nav a:hover,
+.class-page-nav a:focus,
+.class-page-nav a:focus-visible { background: #eef2f6; }
+.jnv-section-nav a[aria-current="page"],
+.class-page-nav a[aria-current="page"] {
+  background: transparent !important;
+  color: var(--jnv-navy) !important;
+  font-weight: 700;
+  border-bottom: 0 !important;
+}
+.jnv-opened fieldset.module {
+  border: 0;
+  background: transparent;
+  overflow: visible;
+  margin: 0;
+  padding: 0;
+}
+.jnv-opened .section-title,
+.jnv-opened fieldset.module > h2.section-title {
+  background: transparent !important;
+  color: var(--jnv-navy) !important;
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-size: 0.92rem;
+  font-weight: 700;
+  padding: 0 0 0.5rem;
+  margin: 0 0 0.9rem;
+  border: 0;
+  border-bottom: 1px solid var(--jnv-line);
+}
+
+body.jnv-admin .jnv-staff-table {
+  width: 100%;
+  max-width: 46rem;
+  table-layout: fixed;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid var(--jnv-line);
+  border-radius: 0;
+  margin: 0;
+}
+body.jnv-admin .jnv-staff-table th,
+body.jnv-admin .jnv-staff-table td {
+  width: 50%;
+  text-align: left;
+  vertical-align: top;
+  padding: 0.7rem 1rem 0.85rem;
+  background: #fff;
+  border: 0;
+  border-right: 1px solid var(--jnv-line);
+  color: var(--jnv-ink);
+  font-size: 0.88rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+body.jnv-admin .jnv-staff-table th:last-child,
+body.jnv-admin .jnv-staff-table td:last-child {
+  border-right: 0;
+}
+body.jnv-admin .jnv-staff-table thead th {
+  color: var(--jnv-navy);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--jnv-line);
+  padding-bottom: 0.45rem;
+}
+body.jnv-admin .jnv-staff-table th label,
+body.jnv-admin .aligned .jnv-staff-table th label {
+  display: block;
+  float: none;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  cursor: default;
+  color: inherit;
+  font: inherit;
+}
+.jnv-staff-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 1.35rem;
+}
+.jnv-staff-cell .jnv-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+body.jnv-admin a.jnv-staff-info,
+body.jnv-admin a.jnv-staff-info:link,
+body.jnv-admin a.jnv-staff-info:visited,
+#content a.jnv-staff-info,
+.jnv-staff-table a.jnv-staff-info,
+.jnv-staff-cell a.jnv-staff-info {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 1.05rem !important;
+  height: 1.05rem !important;
+  min-width: 1.05rem !important;
+  max-width: 1.05rem !important;
+  flex: 0 0 1.05rem;
+  margin: 0;
+  padding: 0 !important;
+  border: 1px solid var(--jnv-navy) !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  color: var(--jnv-navy) !important;
+  font-family: var(--jnv-sans);
+  font-style: normal !important;
+  font-size: 0.56rem !important;
+  font-weight: 600;
+  line-height: 1 !important;
+  letter-spacing: 0;
+  text-decoration: none !important;
+  box-shadow: none !important;
+}
+body.jnv-admin a.jnv-staff-info span,
+#content a.jnv-staff-info span {
+  display: block;
+  font-size: 0.56rem;
+  font-style: normal !important;
+  font-weight: 600;
+  line-height: 1;
+  transform: translateY(-0.04em);
+}
+body.jnv-admin a.jnv-staff-info:hover,
+body.jnv-admin a.jnv-staff-info:focus,
+body.jnv-admin a.jnv-staff-info:focus-visible,
+#content a.jnv-staff-info:hover,
+#content a.jnv-staff-info:focus,
+#content a.jnv-staff-info:focus-visible {
+  background: #fff !important;
+  color: var(--jnv-navy-dark) !important;
+  border-color: var(--jnv-navy-dark) !important;
+  text-decoration: none !important;
+  outline: none;
+  box-shadow: none !important;
+}
+body.jnv-admin a.jnv-staff-info[hidden],
+#content a.jnv-staff-info[hidden] {
+  display: none !important;
+}
+body.jnv-admin .jnv-staff-table select,
+body.jnv-admin .jnv-staff-table select:hover,
+body.jnv-admin .jnv-staff-table select:focus,
+body.jnv-admin .jnv-staff-table select:focus-visible {
+  border: 0;
+  background: none;
+  background-image: none;
+  background-color: transparent;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  box-shadow: none;
+  outline: none;
+}
+
+.jnv-tile-grid { display: none; }
+
+.jnv-desk {
+  margin: 0 0 1.25rem;
+}
+.jnv-desk-card,
+.jnv-desk-card:link,
+.jnv-desk-card:visited,
+.jnv-desk-card:hover,
+.jnv-desk-card:focus,
+.jnv-desk-card:focus-visible,
+.jnv-desk-card:active {
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--jnv-line);
+  text-decoration: none !important;
+  color: var(--jnv-ink) !important;
+  border-radius: 0;
+  border-left: 0;
+  box-shadow: none;
+  background: #fff;
+}
+.jnv-desk-card:last-child { border-bottom: 0; }
+.jnv-desk-card strong {
+  font-family: var(--jnv-sans);
+  font-size: 0.92rem;
+  color: var(--jnv-navy);
+  font-weight: 700;
+}
+.jnv-desk-card span {
+  color: var(--jnv-muted);
+  font-size: 0.86rem;
+}
+.jnv-desk-card:hover,
+.jnv-desk-card:focus,
+.jnv-desk-card:focus-visible { background: #f7f9fb; }
+
+@media (max-width: 640px) {
+  .jnv-desk-card { grid-template-columns: 1fr; gap: 0.15rem; }
+}
+
+.class-attendance-table tfoot th { text-align: left; background: #eef2f6; }
+.class-attendance-table tfoot td { font-weight: 700; }
+.attendance-cell { white-space: nowrap; }
+.attendance-cell.is-absent { background: #f6eeee; }
+.attendance-cell.is-present { background: #eef4f0; }
+.attendance-cell.is-other { background: #f6f3ea; }
+.status-ticks { display: flex; flex-wrap: wrap; gap: 0.15em 0.45em; }
+.column-mark { display: flex; flex-direction: column; gap: 0.3em; margin-top: 0.4em; }
+
+.jnv-admin-footer {
+  padding: 0.8rem 1.1rem 1.1rem;
+  color: var(--jnv-muted);
+  font-size: 0.82rem;
+  border-top: 1px solid var(--jnv-line);
+  font-style: normal;
+}
+
+body.login #container { background: transparent; }
+body.login #header { justify-content: center; }
+body.login #content {
+  background: #fff;
+  border: 1px solid var(--jnv-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+body.login input[type="submit"] {
+  background: var(--jnv-navy) !important;
+  color: #fff !important;
+  width: 100%;
+}
+
+html[data-theme="dark"] body.jnv-admin { background: #0d1824; }
+html[data-theme="dark"] .module,
+html[data-theme="dark"] .jnv-desk,
+html[data-theme="dark"] .jnv-desk-card,
+html[data-theme="dark"] .jnv-section-nav {
+  background: #132536;
+  border-color: #2a4258;
+}
+html[data-theme="dark"] body.jnv-admin select,
+html[data-theme="dark"] body.jnv-admin .actions select,
+html[data-theme="dark"] #content > form[method="get"] input[type="date"],
+html[data-theme="dark"] .jnv-year-form input[type="date"],
+html[data-theme="dark"] .audit-form input[type="date"],
+html[data-theme="dark"] .jnv-class-search input[type="search"] {
+  background-color: #132536;
+  color: #e8eef5;
+  border-color: #2a4258;
+}
+html[data-theme="dark"] .jnv-column-editor {
+  background: #102233;
+  border-color: #2a4258;
+}
+html[data-theme="dark"] .jnv-column-add input[type="text"],
+html[data-theme="dark"] .jnv-column-add select,
+html[data-theme="dark"] .jnv-column-list button,
+html[data-theme="dark"] .jnv-column-add button,
+html[data-theme="dark"] .jnv-inline-form button,
+html[data-theme="dark"] .jnv-hidden-columns button,
+html[data-theme="dark"] .jnv-cell-form input,
+html[data-theme="dark"] .jnv-cell-form select {
+  background: #132536;
+  color: #e8eef5;
+  border-color: #2a4258;
+}
+html[data-theme="dark"] .jnv-edit-group + .jnv-edit-group {
+  border-left-color: #2a4258;
+}
+html[data-theme="dark"] body.jnv-admin .jnv-edit-tool,
+html[data-theme="dark"] #content .jnv-edit-tool,
+html[data-theme="dark"] body.jnv-admin .jnv-edit-toolbar .jnv-column-add button,
+html[data-theme="dark"] #content .jnv-edit-toolbar .jnv-column-add button,
+html[data-theme="dark"] body.jnv-admin .jnv-edit-toolbar .jnv-hidden-columns button,
+html[data-theme="dark"] #content .jnv-edit-toolbar .jnv-hidden-columns button,
+html[data-theme="dark"] body.jnv-admin .jnv-class-toolbar.is-editing .jnv-class-done,
+html[data-theme="dark"] #content .jnv-class-toolbar.is-editing .jnv-class-done,
+html[data-theme="dark"] body.jnv-admin .jnv-handle,
+html[data-theme="dark"] #content .jnv-handle {
+  background: #132536 !important;
+  color: #d7e0e9 !important;
+  border-color: #2a4258 !important;
+}
+html[data-theme="dark"] body.jnv-admin .jnv-edit-tool:hover,
+html[data-theme="dark"] #content .jnv-edit-tool:hover,
+html[data-theme="dark"] body.jnv-admin .jnv-edit-toolbar .jnv-column-add button:hover,
+html[data-theme="dark"] body.jnv-admin .jnv-edit-toolbar .jnv-hidden-columns button:hover,
+html[data-theme="dark"] body.jnv-admin .jnv-class-toolbar.is-editing .jnv-class-done:hover,
+html[data-theme="dark"] body.jnv-admin .jnv-handle:hover,
+html[data-theme="dark"] #content .jnv-handle:hover {
+  background: #1b334c !important;
+  color: #fff !important;
+}
+html[data-theme="dark"] body.jnv-admin .jnv-edit-tool:disabled,
+html[data-theme="dark"] #content .jnv-edit-tool:disabled,
+html[data-theme="dark"] body.jnv-admin .jnv-handle:disabled,
+html[data-theme="dark"] #content .jnv-handle:disabled {
+  color: #6d7c8a !important;
+  border-color: #24384c !important;
+  background: #132536 !important;
+}
+html[data-theme="dark"] .jnv-students-table-wrap {
+  background: #102233;
+  border-color: #2a4258;
+}
+html[data-theme="dark"] .jnv-students-table .jnv-sticky-handle,
+html[data-theme="dark"] .jnv-students-table .jnv-sticky-name,
+html[data-theme="dark"] .jnv-students-table-wrap.is-editing .jnv-students-table tbody .jnv-sticky-handle,
+html[data-theme="dark"] .jnv-students-table-wrap.is-editing .jnv-students-table tbody .jnv-sticky-name {
+  background: #102233;
+}
+html[data-theme="dark"] .jnv-students-table thead .jnv-sticky-handle,
+html[data-theme="dark"] .jnv-students-table thead .jnv-sticky-name,
+html[data-theme="dark"] .jnv-students-table-wrap.is-editing .jnv-students-table thead th,
+html[data-theme="dark"] .jnv-students-table-wrap.is-editing .jnv-students-table thead .jnv-sticky-handle,
+html[data-theme="dark"] .jnv-students-table-wrap.is-editing .jnv-students-table thead .jnv-sticky-name {
+  background: #102233;
+}
+html[data-theme="dark"] .jnv-students-table tbody tr:hover .jnv-sticky-handle,
+html[data-theme="dark"] .jnv-students-table tbody tr:hover .jnv-sticky-name {
+  background: #1b334c;
+}
+html[data-theme="dark"] body.jnv-admin .jnv-class-search-toggle,
+html[data-theme="dark"] #content .jnv-class-search-toggle {
+  color: #d7e0e9 !important;
+}
+html[data-theme="dark"] body.jnv-admin .jnv-class-search-toggle:hover,
+html[data-theme="dark"] body.jnv-admin .jnv-class-search-toggle:focus,
+html[data-theme="dark"] body.jnv-admin .jnv-class-search-toggle:focus-visible,
+html[data-theme="dark"] #content .jnv-class-search-toggle:hover,
+html[data-theme="dark"] #content .jnv-class-search-toggle:focus,
+html[data-theme="dark"] #content .jnv-class-search-toggle:focus-visible {
+  background: #1b334c !important;
+  color: #fff !important;
+}
+html[data-theme="dark"] body.jnv-admin select:hover,
+html[data-theme="dark"] body.jnv-admin .actions select:hover {
+  border-color: #4a6176;
+  background-color: #132536;
+}
+html[data-theme="dark"] body.jnv-admin select:focus,
+html[data-theme="dark"] body.jnv-admin select:focus-visible {
+  outline: none;
+  border-color: #c5a35a;
+}

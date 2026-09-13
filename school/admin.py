@@ -6,6 +6,8 @@ from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import IntegrityError, transaction
+from django.db.models import CharField, Prefetch, Q, Value
+from django.db.models.functions import Concat
 from django.http import Http404, HttpResponseNotAllowed, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
@@ -22,26 +24,115 @@ from .models import (
     AudienceKind,
     ClassSection,
     ClassTeacherAssignment,
+    ClassGradeOptions,
+    ClassGradeStaffAssignment,
+    ClassStaffRole,
     ClassTimetableEntry,
     DutyType,
     House,
     HouseMasterAssignment,
+    HouseStaffRole,
     ParentProfile,
     Routine,
     RoutineSlot,
     SchoolCalendarDay,
     StaffDutyAssignment,
     Student,
+    StudentTableColumn,
     StudentGroup,
     StudentGroupMembership,
     StudentClassMembership,
+    StudentGuardian,
     StudentHouseMembership,
     Subject,
     TeacherProfile,
     TeachingAssignment,
     AttendanceStatus,
+    Circular,
+    MessMenu,
+    OutingPass,
+    VidyalayaProfile,
+    StudentOffice,
+    HouseCompetition,
+    HouseCompetitionResult,
+    SickBayVisit,
+    VisitorPass,
+    LibraryBook,
+    LibraryIssue,
+    ExamTerm,
+    AssessmentMark,
+    CommitteeSeat,
+    VidyalayaEvent,
+    VvnEntry,
+    MigrationRecord,
 )
-from accounts.models import UserCategory
+from accounts.models import User, UserCategory
+
+
+def _apply_day_attendance(request, sessions, students):
+    from .attendance_auth import can_change_attendance_status, can_take_attendance
+
+    valid_statuses = {choice[0] for choice in AttendanceStatus.choices}
+    reason = (request.POST.get("change_reason") or "")[:200]
+    student_ids = {student.pk for student in students}
+    entries = {
+        (entry.activity_session_id, entry.student_id): entry
+        for entry in AttendanceEntry.objects.filter(
+            activity_session__in=sessions,
+            student_id__in=student_ids,
+        )
+    }
+    to_save = []
+    errors = []
+    now = timezone.now()
+    for session in sessions:
+        for student in students:
+            posted = (
+                request.POST.get(f"status_{session.pk}_{student.pk}") or ""
+            ).strip()
+            entry = entries.get((session.pk, student.pk))
+            if not posted:
+                continue
+            if posted not in valid_statuses:
+                errors.append(f"{student}: invalid status.")
+                continue
+            if entry is None:
+                if not can_take_attendance(request.user, session):
+                    continue
+                to_save.append(
+                    AttendanceEntry(
+                        activity_session=session,
+                        student=student,
+                        status=posted,
+                        taken_by=request.user,
+                        taken_at=now,
+                    )
+                )
+                continue
+            if posted == entry.status:
+                continue
+            if not can_change_attendance_status(request.user, session):
+                continue
+            entry.status = posted
+            entry.updated_by = request.user
+            entry._status_change_reason = reason
+            to_save.append(entry)
+    if errors:
+        return errors
+    try:
+        with transaction.atomic():
+            for obj in to_save:
+                obj.save()
+    except IntegrityError:
+        return [
+            "Another user saved attendance at the same time. "
+            "Please review the current marks and try again."
+        ]
+    except ValidationError as exc:
+        if hasattr(exc, "messages"):
+            return list(exc.messages)
+        return [str(exc)]
+    return []
 
 
 @admin.register(AcademicYear)
@@ -81,17 +172,45 @@ class AcademicYearAdmin(admin.ModelAdmin):
 class ClassSectionAdmin(admin.ModelAdmin):
     list_display = (
         "display_name",
-        "grade_name",
-        "section_name",
-        "is_active",
         "attendance_report_link",
     )
-    list_filter = ("is_active", "grade_name")
+    list_filter = ()
     search_fields = ("display_name", "grade_name", "section_name")
-    ordering = ("grade_name", "section_name")
+    ordering = ("grade_number", "section_name", "display_name")
+    change_list_template = "admin/school/classsection/change_list.html"
+    list_per_page = 200
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context["class_list"] = ClassSection.objects.order_by(
+            "grade_number",
+            "section_name",
+            "display_name",
+        )
+        return super().changelist_view(request, extra_context)
 
     def get_urls(self):
         extra = [
+            path(
+                "class/<int:object_id>/",
+                self.admin_site.admin_view(self.class_overview_view),
+                name="school_classsection_class_overview",
+            ),
+            path(
+                "class/<int:object_id>/students/",
+                self.admin_site.admin_view(self.class_students_view),
+                name="school_classsection_class_students",
+            ),
+            path(
+                "class/<int:object_id>/attendance/",
+                self.admin_site.admin_view(self.class_attendance_view),
+                name="school_classsection_class_attendance",
+            ),
+            path(
+                "class/<int:object_id>/routine/",
+                self.admin_site.admin_view(self.class_routine_view),
+                name="school_classsection_class_routine",
+            ),
             path(
                 "<int:object_id>/attendance-report/",
                 self.admin_site.admin_view(self.attendance_report_view),
@@ -104,6 +223,452 @@ class ClassSectionAdmin(admin.ModelAdmin):
     def attendance_report_link(self, obj):
         url = reverse("admin:school_classsection_attendance_report", args=[obj.pk])
         return format_html('<a href="{}">Attendance report</a>', url)
+
+    def class_overview_view(self, request, object_id):
+        class_section = ClassSection.objects.filter(pk=object_id).first()
+        if class_section is None:
+            raise Http404("Class not found.")
+
+        years = list(AcademicYear.objects.order_by("-start_date"))
+        selected_year = AcademicYear.objects.filter(is_current=True).first()
+        if selected_year is None:
+            selected_year = years[0] if years else None
+        raw_year = request.GET.get("academic_year") or request.POST.get("academic_year")
+        if raw_year:
+            try:
+                selected_year = AcademicYear.objects.get(pk=int(raw_year))
+            except (AcademicYear.DoesNotExist, TypeError, ValueError):
+                selected_year = None
+
+        can_edit = (
+            request.user.is_authenticated
+            and request.user.is_active
+            and request.user.category == UserCategory.ADMINISTRATION
+        )
+        options = None
+        if selected_year:
+            options = ClassGradeOptions.objects.filter(
+                academic_year=selected_year,
+                class_section=class_section,
+            ).first()
+
+        if request.method == "POST":
+            if not can_edit:
+                raise PermissionDenied
+            if selected_year is None:
+                raise Http404("Academic year not found.")
+            class_teacher_id = (request.POST.get("class_teacher") or "").strip()
+            assistant_id = (request.POST.get("assistant_class_teacher") or "").strip()
+            if assistant_id and assistant_id == class_teacher_id:
+                messages.error(
+                    request,
+                    "Class teacher and assistant class teacher must be different people.",
+                )
+                assistant_id = ""
+            ClassGradeOptions.objects.update_or_create(
+                academic_year=selected_year,
+                class_section=class_section,
+                defaults={"show_assistant_class_teacher": True},
+            )
+            self._save_class_staff(
+                selected_year,
+                class_section,
+                ClassStaffRole.CLASS_TEACHER,
+                class_teacher_id,
+            )
+            self._save_class_staff(
+                selected_year,
+                class_section,
+                ClassStaffRole.ASSISTANT_CLASS_TEACHER,
+                assistant_id,
+            )
+            return HttpResponseRedirect(
+                reverse(
+                    "admin:school_classsection_class_overview",
+                    args=[class_section.pk],
+                )
+                + f"?academic_year={selected_year.pk}"
+            )
+
+        assignments = {}
+        if selected_year:
+            assignments = {
+                item.role: item
+                for item in ClassGradeStaffAssignment.objects.filter(
+                    academic_year=selected_year,
+                    class_section=class_section,
+                ).select_related("teacher__user")
+            }
+        teachers = TeacherProfile.objects.select_related("user").order_by(
+            "user__last_name",
+            "user__first_name",
+            "user__username",
+        )
+        show_assistant = True
+        context = {
+            **self.admin_site.each_context(request),
+            "title": str(class_section),
+            "opts": self.model._meta,
+            "class_section": class_section,
+            "years": years,
+            "selected_year": selected_year,
+            "teachers": teachers,
+            "class_teacher": assignments.get(ClassStaffRole.CLASS_TEACHER),
+            "assistant_class_teacher": assignments.get(
+                ClassStaffRole.ASSISTANT_CLASS_TEACHER
+            ),
+            "show_assistant_class_teacher": show_assistant,
+            "can_edit": can_edit,
+            "changelist_url": reverse("admin:school_classsection_changelist"),
+            "current_class_section": "home",
+            **self._class_section_urls(class_section, selected_year),
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/classsection/class_overview.html",
+            context,
+        )
+
+    def _class_section_urls(self, class_section, selected_year):
+        query = f"?academic_year={selected_year.pk}" if selected_year else ""
+        return {
+            "overview_url": reverse(
+                "admin:school_classsection_class_overview",
+                args=[class_section.pk],
+            )
+            + query,
+            "students_url": reverse(
+                "admin:school_classsection_class_students",
+                args=[class_section.pk],
+            )
+            + query,
+            "attendance_url": reverse(
+                "admin:school_classsection_class_attendance",
+                args=[class_section.pk],
+            )
+            + query,
+            "routine_url": reverse(
+                "admin:school_classsection_class_routine",
+                args=[class_section.pk],
+            )
+            + query,
+        }
+
+    def _class_page_year(self, request):
+        years = list(AcademicYear.objects.order_by("-start_date"))
+        selected_year = AcademicYear.objects.filter(is_current=True).first()
+        if selected_year is None:
+            selected_year = years[0] if years else None
+        raw_year = request.GET.get("academic_year") or request.POST.get("academic_year")
+        if raw_year:
+            try:
+                selected_year = AcademicYear.objects.get(pk=int(raw_year))
+            except (AcademicYear.DoesNotExist, TypeError, ValueError):
+                selected_year = None
+        return years, selected_year
+
+    def _class_students(self, class_section, selected_year, query=""):
+        if selected_year is None:
+            return Student.objects.none()
+        students = (
+            Student.objects.filter(
+                class_memberships__academic_year=selected_year,
+                class_memberships__class_section=class_section,
+            )
+            .select_related("class_section")
+            .prefetch_related(
+                Prefetch(
+                    "house_memberships",
+                    queryset=StudentHouseMembership.objects.filter(
+                        academic_year=selected_year
+                    ).select_related("house"),
+                    to_attr="year_houses",
+                )
+            )
+            .order_by("roll_number", "first_name", "last_name", "admission_number")
+        )
+        query = (query or "").strip()
+        if not query:
+            return students
+        return students.annotate(
+            _given_name=Concat(
+                "first_name",
+                Value(" "),
+                "last_name",
+                output_field=CharField(),
+            )
+        ).filter(
+            Q(first_name__icontains=query)
+            | Q(middle_name__icontains=query)
+            | Q(last_name__icontains=query)
+            | Q(_given_name__icontains=query)
+            | Q(admission_number__icontains=query)
+            | Q(roll_number__icontains=query)
+        )
+
+    def class_students_view(self, request, object_id):
+        class_section = ClassSection.objects.filter(pk=object_id).first()
+        if class_section is None:
+            raise Http404("Class not found.")
+        years, selected_year = self._class_page_year(request)
+        search_query = (request.GET.get("q") or "").strip()
+        can_edit = (
+            request.user.is_authenticated
+            and request.user.is_active
+            and request.user.category == UserCategory.ADMINISTRATION
+        )
+        from school.student_table import (
+            attach_table_cells,
+            class_roster,
+            handle_student_table_post,
+            resolved_columns,
+            table_history_flags,
+        )
+
+        if handle_student_table_post(request, class_section, selected_year):
+            query = {"edit": "1"}
+            if selected_year:
+                query["academic_year"] = selected_year.pk
+            if search_query:
+                query["q"] = search_query
+            return HttpResponseRedirect(
+                reverse(
+                    "admin:school_classsection_class_students",
+                    args=[class_section.pk],
+                )
+                + f"?{urlencode(query)}"
+            )
+
+        table_edit = can_edit and (
+            request.GET.get("edit") == "1" or request.GET.get("edit_columns") == "1"
+        )
+        houses = list(House.objects.filter(is_active=True).order_by("name"))
+        table_columns, hidden_columns = resolved_columns(
+            include_hidden=False,
+            houses=houses,
+        )
+        extra_columns = list(StudentTableColumn.objects.order_by("sort_order", "id"))
+        students = self._class_students(class_section, selected_year, search_query)
+        students = students.prefetch_related("extra_biodata_rows")
+        students = list(students)
+        attach_table_cells(students, table_columns)
+        roster = class_roster(class_section, selected_year)
+        roster_index = {row.pk: index for index, row in enumerate(roster)}
+        roster_last = len(roster) - 1
+        for student in students:
+            index = roster_index.get(student.pk)
+            student.can_move_up = index is not None and index > 0
+            student.can_move_down = index is not None and index < roster_last
+        query = {}
+        if selected_year:
+            query["academic_year"] = selected_year.pk
+        if search_query:
+            query["q"] = search_query
+        view_query = urlencode(query)
+        edit_query = urlencode({**query, "edit": "1"})
+        can_undo, can_redo = table_history_flags(
+            request, class_section, selected_year
+        )
+        context = {
+            **self.admin_site.each_context(request),
+            "title": str(class_section),
+            "opts": self.model._meta,
+            "class_section": class_section,
+            "years": years,
+            "selected_year": selected_year,
+            "search_query": search_query,
+            "students": students,
+            "extra_columns": extra_columns,
+            "table_columns": table_columns,
+            "hidden_columns": hidden_columns,
+            "can_edit": can_edit,
+            "table_edit": table_edit,
+            "can_undo": can_undo,
+            "can_redo": can_redo,
+            "columns_editor_open": table_edit,
+            "students_view_query": view_query,
+            "students_edit_query": edit_query,
+            "changelist_url": reverse("admin:school_classsection_changelist"),
+            "current_class_section": "students",
+            **self._class_section_urls(class_section, selected_year),
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/classsection/class_students.html",
+            context,
+        )
+
+    def class_routine_view(self, request, object_id):
+        class_section = ClassSection.objects.filter(pk=object_id).first()
+        if class_section is None:
+            raise Http404("Class not found.")
+        years, selected_year = self._class_page_year(request)
+        entries = []
+        if selected_year:
+            entries = list(
+                ClassTimetableEntry.objects.filter(
+                    academic_year=selected_year,
+                    class_section=class_section,
+                )
+                .select_related("routine_slot", "subject", "teacher__user")
+                .order_by("routine_slot__sort_order", "routine_slot__start_time")
+            )
+        context = {
+            **self.admin_site.each_context(request),
+            "title": str(class_section),
+            "opts": self.model._meta,
+            "class_section": class_section,
+            "years": years,
+            "selected_year": selected_year,
+            "timetable_entries": entries,
+            "changelist_url": reverse("admin:school_classsection_changelist"),
+            "current_class_section": "routine",
+            **self._class_section_urls(class_section, selected_year),
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/classsection/class_routine.html",
+            context,
+        )
+
+    def class_attendance_view(self, request, object_id):
+        from .attendance_auth import can_change_attendance_status, can_take_attendance
+
+        class_section = ClassSection.objects.filter(pk=object_id).first()
+        if class_section is None:
+            raise Http404("Class not found.")
+        years, selected_year = self._class_page_year(request)
+        selected_date = timezone.localdate()
+        raw_date = request.GET.get("date") or request.POST.get("date")
+        if raw_date:
+            try:
+                selected_date = date.fromisoformat(raw_date)
+            except ValueError:
+                selected_date = timezone.localdate()
+
+        students = list(self._class_students(class_section, selected_year))
+        sessions = []
+        if selected_year:
+            sessions = list(
+                ActivitySession.objects.filter(
+                    date=selected_date,
+                    academic_year=selected_year,
+                    audience_kind=AudienceKind.CLASS,
+                    class_section=class_section,
+                    activity_type__takes_attendance=True,
+                )
+                .select_related("activity_type", "responsible_staff", "routine_slot")
+                .order_by("start_time", "name")
+            )
+
+        if request.method == "POST":
+            user = request.user
+            if (
+                not user.is_authenticated
+                or not user.is_active
+                or user.category == UserCategory.PARENT
+            ):
+                raise PermissionDenied
+            errors = _apply_day_attendance(
+                request,
+                sessions,
+                students,
+            )
+            if not errors:
+                messages.success(request, "Attendance saved.")
+                query = urlencode(
+                    {
+                        "academic_year": selected_year.pk if selected_year else "",
+                        "date": selected_date.isoformat(),
+                    }
+                )
+                return HttpResponseRedirect(
+                    reverse(
+                        "admin:school_classsection_class_attendance",
+                        args=[class_section.pk],
+                    )
+                    + f"?{query}"
+                )
+            messages.error(request, " ".join(errors))
+
+        entries = {
+            (entry.activity_session_id, entry.student_id): entry
+            for entry in AttendanceEntry.objects.filter(
+                activity_session__in=sessions,
+                student__in=students,
+            ).select_related("taken_by", "updated_by")
+        }
+        session_editable = {
+            session.pk: can_take_attendance(request.user, session)
+            or can_change_attendance_status(request.user, session)
+            for session in sessions
+        }
+        rows = []
+        for student in students:
+            cells = []
+            for session in sessions:
+                entry = entries.get((session.pk, student.pk))
+                posted = (
+                    request.POST.get(f"status_{session.pk}_{student.pk}")
+                    if request.method == "POST"
+                    else None
+                )
+                cells.append(
+                    {
+                        "session": session,
+                        "entry": entry,
+                        "status": posted
+                        if posted is not None
+                        else (entry.status if entry else ""),
+                        "editable": session_editable.get(session.pk, False),
+                    }
+                )
+            rows.append({"student": student, "cells": cells})
+
+        can_save = any(session_editable.values())
+        context = {
+            **self.admin_site.each_context(request),
+            "title": str(class_section),
+            "opts": self.model._meta,
+            "class_section": class_section,
+            "years": years,
+            "selected_year": selected_year,
+            "selected_date": selected_date,
+            "sessions": sessions,
+            "rows": rows,
+            "status_choices": AttendanceStatus.choices,
+            "can_save": can_save,
+            "changelist_url": reverse("admin:school_classsection_changelist"),
+            "current_class_section": "attendance",
+            **self._class_section_urls(class_section, selected_year),
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/classsection/class_attendance.html",
+            context,
+        )
+
+    def _apply_class_day_attendance(self, request, sessions, students):
+        return _apply_day_attendance(request, sessions, students)
+
+    def _save_class_staff(self, year, class_section, role, teacher_id):
+        teacher_id = (teacher_id or "").strip()
+        if not teacher_id:
+            ClassGradeStaffAssignment.objects.filter(
+                academic_year=year,
+                class_section=class_section,
+                role=role,
+            ).delete()
+            return
+        teacher = TeacherProfile.objects.filter(pk=int(teacher_id)).first()
+        if teacher is None:
+            return
+        ClassGradeStaffAssignment.objects.update_or_create(
+            academic_year=year,
+            class_section=class_section,
+            role=role,
+            defaults={"teacher": teacher},
+        )
 
     def _forbidden_report(self, request, message):
         context = {
@@ -141,7 +706,7 @@ class ClassSectionAdmin(admin.ModelAdmin):
 
         class_section = ClassSection.objects.filter(pk=object_id).first()
         if class_section is None:
-            raise Http404("Class section not found.")
+            raise Http404("Class not found.")
 
         years = list(AcademicYear.objects.order_by("-start_date"))
         notice = ""
@@ -240,6 +805,14 @@ class StudentClassMembershipInline(admin.TabularInline):
     verbose_name_plural = "class placement history"
 
 
+class StudentGuardianFromStudentInline(admin.TabularInline):
+    model = StudentGuardian
+    extra = 0
+    autocomplete_fields = ("parent_profile",)
+    verbose_name = "guardian"
+    verbose_name_plural = "guardians"
+
+
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
     list_display = (
@@ -247,23 +820,93 @@ class StudentAdmin(admin.ModelAdmin):
         "roll_number",
         "full_name",
         "class_section",
-        "academic_year",
         "gender",
+        "date_of_birth",
+        "academic_year",
         "is_active",
         "attendance_history_link",
     )
-    list_filter = ("is_active", "academic_year", "class_section", "gender")
+    list_filter = (
+        "is_active",
+        "academic_year",
+        "class_section",
+        "gender",
+        "social_category",
+        "area_type",
+    )
     search_fields = (
         "admission_number",
         "first_name",
         "middle_name",
         "last_name",
         "roll_number",
+        "father_name",
+        "mother_name",
+        "native_district",
     )
-    autocomplete_fields = ("class_section", "academic_year")
     list_select_related = ("class_section", "academic_year")
-    inlines = (StudentClassMembershipInline,)
+    fieldsets = (
+        (
+            "Class and roll",
+            {
+                "fields": (
+                    "class_section",
+                    "roll_number",
+                    "academic_year",
+                )
+            },
+        ),
+        (
+            None,
+            {
+                "fields": (
+                    "admission_number",
+                    "first_name",
+                    "middle_name",
+                    "last_name",
+                    "is_active",
+                )
+            },
+        ),
+        (
+            "JNV basic details",
+            {
+                "fields": (
+                    "gender",
+                    "date_of_birth",
+                    "father_name",
+                    "mother_name",
+                    "social_category",
+                    "area_type",
+                    "native_district",
+                    "blood_group",
+                )
+            },
+        ),
+    )
+    ordering = (
+        "class_section__grade_number",
+        "class_section__section_name",
+        "roll_number",
+        "last_name",
+        "first_name",
+    )
+    inlines = (StudentClassMembershipInline, StudentGuardianFromStudentInline)
     list_per_page = 50
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name == "roll_number":
+            kwargs["label"] = "Roll no."
+        elif db_field.name == "class_section":
+            kwargs["label"] = "Class"
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        current = AcademicYear.objects.filter(is_current=True).first()
+        if current and "academic_year" not in initial:
+            initial["academic_year"] = current.pk
+        return initial
 
     def changelist_view(self, request, extra_context=None):
         self._request = request
@@ -271,6 +914,11 @@ class StudentAdmin(admin.ModelAdmin):
 
     def get_urls(self):
         extra = [
+            path(
+                "<int:object_id>/biodata/",
+                self.admin_site.admin_view(self.student_biodata_view),
+                name="school_student_biodata",
+            ),
             path(
                 "<int:object_id>/attendance-history/",
                 self.admin_site.admin_view(self.attendance_history_view),
@@ -283,6 +931,87 @@ class StudentAdmin(admin.ModelAdmin):
     def attendance_history_link(self, obj):
         url = reverse("admin:school_student_attendance_history", args=[obj.pk])
         return format_html('<a href="{}">Attendance history</a>', url)
+
+    def student_biodata_view(self, request, object_id):
+        user = request.user
+        if (
+            not user.is_authenticated
+            or not user.is_active
+            or user.category == UserCategory.PARENT
+        ):
+            return self._forbidden_history(
+                request,
+                "You are not authorized to view student biodata.",
+            )
+
+        student = (
+            Student.objects.select_related("class_section", "academic_year")
+            .filter(pk=object_id)
+            .first()
+        )
+        if student is None:
+            raise Http404("Student not found.")
+
+        extra_rows = student.extra_biodata_rows.all()
+        from school.biodata_extra import handle_extra_biodata_post
+
+        if handle_extra_biodata_post(
+            request,
+            extra_rows,
+            {"student": student},
+        ):
+            return HttpResponseRedirect(request.get_full_path())
+
+        houses = (
+            StudentHouseMembership.objects.filter(student=student)
+            .select_related("house", "academic_year")
+            .order_by("-academic_year")
+        )
+        class_history = (
+            StudentClassMembership.objects.filter(student=student)
+            .select_related("class_section", "academic_year")
+            .order_by("-academic_year")
+        )
+        guardians = (
+            StudentGuardian.objects.filter(student=student)
+            .select_related("parent_profile__user")
+            .order_by("parent_profile__user__last_name", "parent_profile__user__username")
+        )
+        from_class = request.GET.get("from_class")
+        from_house = request.GET.get("from_house")
+        back_url = reverse("admin:school_student_changelist")
+        if from_class:
+            back_url = reverse(
+                "admin:school_classsection_class_students",
+                args=[from_class],
+            )
+        elif from_house:
+            back_url = reverse(
+                "admin:school_house_house_students",
+                args=[from_house],
+            )
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Biodata: {student.full_name}",
+            "opts": self.model._meta,
+            "student": student,
+            "houses": houses,
+            "class_history": class_history,
+            "guardians": guardians,
+            "extra_rows": extra_rows,
+            "back_url": back_url,
+            "attendance_url": reverse(
+                "admin:school_student_attendance_history",
+                args=[student.pk],
+            ),
+            "change_url": reverse("admin:school_student_change", args=[student.pk]),
+            "can_edit": user.category == UserCategory.ADMINISTRATION,
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/student/biodata.html",
+            context,
+        )
 
     def _forbidden_history(self, request, message):
         context = {
@@ -455,27 +1184,89 @@ class TeacherProfileAdmin(admin.ModelAdmin):
         return obj.user.is_active
 
 
+class StudentGuardianInline(admin.TabularInline):
+    model = StudentGuardian
+    extra = 1
+    autocomplete_fields = ("student",)
+    verbose_name = "child"
+    verbose_name_plural = "children"
+
+
 @admin.register(ParentProfile)
 class ParentProfileAdmin(admin.ModelAdmin):
     list_display = ("user", "user_is_active")
     search_fields = ("user__username", "user__first_name", "user__last_name")
     autocomplete_fields = ("user",)
     list_select_related = ("user",)
+    inlines = (StudentGuardianInline,)
 
     @admin.display(description="Active", boolean=True)
     def user_is_active(self, obj):
         return obj.user.is_active
 
 
+@admin.register(StudentGuardian)
+class StudentGuardianAdmin(admin.ModelAdmin):
+    list_display = ("parent_profile", "student")
+    search_fields = (
+        "parent_profile__user__username",
+        "parent_profile__user__first_name",
+        "parent_profile__user__last_name",
+        "student__admission_number",
+        "student__first_name",
+        "student__last_name",
+    )
+    autocomplete_fields = ("parent_profile", "student")
+    list_select_related = ("parent_profile__user", "student")
+    list_per_page = 50
+
+
+class HouseStaffAssignmentInline(admin.TabularInline):
+    model = HouseMasterAssignment
+    extra = 2
+    fields = ("role", "staff", "academic_year")
+    autocomplete_fields = ("staff", "academic_year")
+    verbose_name = "house teacher"
+    verbose_name_plural = "house teachers"
+
+
 @admin.register(House)
 class HouseAdmin(admin.ModelAdmin):
-    list_display = ("name", "code", "is_active", "attendance_report_link")
+    list_display = ("name", "is_active", "attendance_report_link")
     list_filter = ("is_active",)
-    search_fields = ("name", "code")
+    search_fields = ("name",)
     ordering = ("name",)
+    inlines = (HouseStaffAssignmentInline,)
+    change_list_template = "admin/school/house/change_list.html"
+    list_per_page = 200
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context["house_list"] = House.objects.order_by("name")
+        return super().changelist_view(request, extra_context)
 
     def get_urls(self):
         extra = [
+            path(
+                "house/<int:object_id>/",
+                self.admin_site.admin_view(self.house_overview_view),
+                name="school_house_house_overview",
+            ),
+            path(
+                "house/<int:object_id>/students/",
+                self.admin_site.admin_view(self.house_students_view),
+                name="school_house_house_students",
+            ),
+            path(
+                "house/<int:object_id>/attendance/",
+                self.admin_site.admin_view(self.house_attendance_view),
+                name="school_house_house_attendance",
+            ),
+            path(
+                "house/<int:object_id>/routine/",
+                self.admin_site.admin_view(self.house_routine_view),
+                name="school_house_house_routine",
+            ),
             path(
                 "<int:object_id>/attendance-report/",
                 self.admin_site.admin_view(self.attendance_report_view),
@@ -488,6 +1279,347 @@ class HouseAdmin(admin.ModelAdmin):
     def attendance_report_link(self, obj):
         url = reverse("admin:school_house_attendance_report", args=[obj.pk])
         return format_html('<a href="{}">Attendance report</a>', url)
+
+    def _house_urls(self, house, selected_year):
+        query = f"?academic_year={selected_year.pk}" if selected_year else ""
+        return {
+            "overview_url": reverse(
+                "admin:school_house_house_overview",
+                args=[house.pk],
+            )
+            + query,
+            "students_url": reverse(
+                "admin:school_house_house_students",
+                args=[house.pk],
+            )
+            + query,
+            "attendance_url": reverse(
+                "admin:school_house_house_attendance",
+                args=[house.pk],
+            )
+            + query,
+            "routine_url": reverse(
+                "admin:school_house_house_routine",
+                args=[house.pk],
+            )
+            + query,
+        }
+
+    def _house_page_year(self, request):
+        years = list(AcademicYear.objects.order_by("-start_date"))
+        selected_year = AcademicYear.objects.filter(is_current=True).first()
+        if selected_year is None:
+            selected_year = years[0] if years else None
+        raw_year = request.GET.get("academic_year") or request.POST.get("academic_year")
+        if raw_year:
+            try:
+                selected_year = AcademicYear.objects.get(pk=int(raw_year))
+            except (AcademicYear.DoesNotExist, TypeError, ValueError):
+                selected_year = None
+        return years, selected_year
+
+    def _house_students(self, house, selected_year):
+        if selected_year is None:
+            return Student.objects.none()
+        return (
+            Student.objects.filter(
+                house_memberships__house=house,
+                house_memberships__academic_year=selected_year,
+            )
+            .select_related("class_section", "academic_year")
+            .order_by(
+                "class_section__grade_number",
+                "class_section__section_name",
+                "roll_number",
+                "last_name",
+                "first_name",
+            )
+        )
+
+    def _save_house_staff(self, year, house, role, staff_id):
+        staff_id = (staff_id or "").strip()
+        if not staff_id:
+            HouseMasterAssignment.objects.filter(
+                academic_year=year,
+                house=house,
+                role=role,
+            ).delete()
+            return
+        staff = User.objects.filter(
+            pk=int(staff_id),
+            category=UserCategory.STAFF,
+        ).first()
+        if staff is None:
+            return
+        HouseMasterAssignment.objects.update_or_create(
+            academic_year=year,
+            house=house,
+            role=role,
+            defaults={"staff": staff},
+        )
+
+    def house_overview_view(self, request, object_id):
+        house = House.objects.filter(pk=object_id).first()
+        if house is None:
+            raise Http404("House not found.")
+        years, selected_year = self._house_page_year(request)
+        can_edit = (
+            request.user.is_authenticated
+            and request.user.is_active
+            and request.user.category == UserCategory.ADMINISTRATION
+        )
+        if request.method == "POST":
+            if not can_edit:
+                raise PermissionDenied
+            if selected_year is None:
+                raise Http404("Academic year not found.")
+            show_assistant = request.POST.get("show_assistant_house_teacher") == "on"
+            house_teacher_id = (request.POST.get("house_teacher") or "").strip()
+            assistant_id = (request.POST.get("assistant_house_teacher") or "").strip()
+            self._save_house_staff(
+                selected_year,
+                house,
+                HouseStaffRole.HOUSE_TEACHER,
+                house_teacher_id,
+            )
+            if show_assistant:
+                if assistant_id and assistant_id == house_teacher_id:
+                    messages.error(
+                        request,
+                        "House teacher and assistant house teacher must be different people.",
+                    )
+                    HouseMasterAssignment.objects.filter(
+                        academic_year=selected_year,
+                        house=house,
+                        role=HouseStaffRole.ASSISTANT_HOUSE_TEACHER,
+                    ).delete()
+                else:
+                    self._save_house_staff(
+                        selected_year,
+                        house,
+                        HouseStaffRole.ASSISTANT_HOUSE_TEACHER,
+                        assistant_id,
+                    )
+            else:
+                HouseMasterAssignment.objects.filter(
+                    academic_year=selected_year,
+                    house=house,
+                    role=HouseStaffRole.ASSISTANT_HOUSE_TEACHER,
+                ).delete()
+            return HttpResponseRedirect(
+                reverse(
+                    "admin:school_house_house_overview",
+                    args=[house.pk],
+                )
+                + f"?academic_year={selected_year.pk}"
+            )
+
+        assignments = {}
+        if selected_year:
+            assignments = {
+                item.role: item
+                for item in HouseMasterAssignment.objects.filter(
+                    academic_year=selected_year,
+                    house=house,
+                ).select_related("staff")
+            }
+        staff_users = User.objects.filter(category=UserCategory.STAFF).order_by(
+            "last_name",
+            "first_name",
+            "username",
+        )
+        assistant = assignments.get(HouseStaffRole.ASSISTANT_HOUSE_TEACHER)
+        context = {
+            **self.admin_site.each_context(request),
+            "title": str(house),
+            "opts": self.model._meta,
+            "house": house,
+            "years": years,
+            "selected_year": selected_year,
+            "staff_users": staff_users,
+            "house_teacher": assignments.get(HouseStaffRole.HOUSE_TEACHER),
+            "assistant_house_teacher": assistant,
+            "show_assistant_house_teacher": assistant is not None,
+            "can_edit": can_edit,
+            "changelist_url": reverse("admin:school_house_changelist"),
+            "current_house_section": "home",
+            **self._house_urls(house, selected_year),
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/house/house_overview.html",
+            context,
+        )
+
+    def house_students_view(self, request, object_id):
+        house = House.objects.filter(pk=object_id).first()
+        if house is None:
+            raise Http404("House not found.")
+        years, selected_year = self._house_page_year(request)
+        context = {
+            **self.admin_site.each_context(request),
+            "title": str(house),
+            "opts": self.model._meta,
+            "house": house,
+            "years": years,
+            "selected_year": selected_year,
+            "students": self._house_students(house, selected_year),
+            "changelist_url": reverse("admin:school_house_changelist"),
+            "current_house_section": "students",
+            **self._house_urls(house, selected_year),
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/house/house_students.html",
+            context,
+        )
+
+    def house_routine_view(self, request, object_id):
+        house = House.objects.filter(pk=object_id).first()
+        if house is None:
+            raise Http404("House not found.")
+        years, selected_year = self._house_page_year(request)
+        slots = []
+        if selected_year:
+            slots = list(
+                RoutineSlot.objects.filter(
+                    routine__academic_year=selected_year,
+                    is_active=True,
+                    activity_type__default_audience_kind=AudienceKind.HOUSE,
+                )
+                .select_related("activity_type", "routine")
+                .order_by("sort_order", "start_time")
+            )
+        context = {
+            **self.admin_site.each_context(request),
+            "title": str(house),
+            "opts": self.model._meta,
+            "house": house,
+            "years": years,
+            "selected_year": selected_year,
+            "routine_slots": slots,
+            "changelist_url": reverse("admin:school_house_changelist"),
+            "current_house_section": "routine",
+            **self._house_urls(house, selected_year),
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/house/house_routine.html",
+            context,
+        )
+
+    def house_attendance_view(self, request, object_id):
+        from .attendance_auth import can_change_attendance_status, can_take_attendance
+
+        house = House.objects.filter(pk=object_id).first()
+        if house is None:
+            raise Http404("House not found.")
+        years, selected_year = self._house_page_year(request)
+        selected_date = timezone.localdate()
+        raw_date = request.GET.get("date") or request.POST.get("date")
+        if raw_date:
+            try:
+                selected_date = date.fromisoformat(raw_date)
+            except ValueError:
+                selected_date = timezone.localdate()
+
+        students = list(self._house_students(house, selected_year))
+        sessions = []
+        if selected_year:
+            sessions = list(
+                ActivitySession.objects.filter(
+                    date=selected_date,
+                    academic_year=selected_year,
+                    audience_kind=AudienceKind.HOUSE,
+                    house=house,
+                    activity_type__takes_attendance=True,
+                )
+                .select_related("activity_type", "responsible_staff", "routine_slot")
+                .order_by("start_time", "name")
+            )
+
+        if request.method == "POST":
+            user = request.user
+            if (
+                not user.is_authenticated
+                or not user.is_active
+                or user.category == UserCategory.PARENT
+            ):
+                raise PermissionDenied
+            errors = _apply_day_attendance(request, sessions, students)
+            if not errors:
+                messages.success(request, "Attendance saved.")
+                query = urlencode(
+                    {
+                        "academic_year": selected_year.pk if selected_year else "",
+                        "date": selected_date.isoformat(),
+                    }
+                )
+                return HttpResponseRedirect(
+                    reverse(
+                        "admin:school_house_house_attendance",
+                        args=[house.pk],
+                    )
+                    + f"?{query}"
+                )
+            messages.error(request, " ".join(errors))
+
+        entries = {
+            (entry.activity_session_id, entry.student_id): entry
+            for entry in AttendanceEntry.objects.filter(
+                activity_session__in=sessions,
+                student__in=students,
+            ).select_related("taken_by", "updated_by")
+        }
+        session_editable = {
+            session.pk: can_take_attendance(request.user, session)
+            or can_change_attendance_status(request.user, session)
+            for session in sessions
+        }
+        rows = []
+        for student in students:
+            cells = []
+            for session in sessions:
+                entry = entries.get((session.pk, student.pk))
+                posted = (
+                    request.POST.get(f"status_{session.pk}_{student.pk}")
+                    if request.method == "POST"
+                    else None
+                )
+                cells.append(
+                    {
+                        "session": session,
+                        "entry": entry,
+                        "status": posted
+                        if posted is not None
+                        else (entry.status if entry else ""),
+                        "editable": session_editable.get(session.pk, False),
+                    }
+                )
+            rows.append({"student": student, "cells": cells})
+
+        can_save = any(session_editable.values())
+        context = {
+            **self.admin_site.each_context(request),
+            "title": str(house),
+            "opts": self.model._meta,
+            "house": house,
+            "years": years,
+            "selected_year": selected_year,
+            "selected_date": selected_date,
+            "sessions": sessions,
+            "rows": rows,
+            "status_choices": AttendanceStatus.choices,
+            "can_save": can_save,
+            "changelist_url": reverse("admin:school_house_changelist"),
+            "current_house_section": "attendance",
+            **self._house_urls(house, selected_year),
+        }
+        return TemplateResponse(
+            request,
+            "admin/school/house/house_attendance.html",
+            context,
+        )
 
     def _forbidden_report(self, request, message):
         context = {
@@ -614,7 +1746,6 @@ class StudentHouseMembershipAdmin(admin.ModelAdmin):
         "student__first_name",
         "student__last_name",
         "house__name",
-        "house__code",
     )
     autocomplete_fields = ("student", "house", "academic_year")
     list_select_related = ("student", "house", "academic_year")
@@ -680,18 +1811,17 @@ class ClassTeacherAssignmentAdmin(admin.ModelAdmin):
 
 @admin.register(HouseMasterAssignment)
 class HouseMasterAssignmentAdmin(admin.ModelAdmin):
-    list_display = ("staff", "staff_designation", "house", "academic_year")
-    list_filter = ("academic_year", "house")
+    list_display = ("staff", "role", "staff_designation", "house", "academic_year")
+    list_filter = ("academic_year", "house", "role")
     search_fields = (
         "staff__username",
         "staff__first_name",
         "staff__last_name",
         "house__name",
-        "house__code",
     )
     autocomplete_fields = ("staff", "house", "academic_year")
     list_select_related = ("staff", "staff__designation", "house", "academic_year")
-    ordering = ("-academic_year", "house")
+    ordering = ("-academic_year", "house", "role")
 
     @admin.display(description="Designation")
     def staff_designation(self, obj):
@@ -2364,3 +3494,157 @@ class AttendanceRevisionAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(VidyalayaProfile)
+class VidyalayaProfileAdmin(admin.ModelAdmin):
+    list_display = ("name", "campus", "district", "state", "nvs_region", "motto")
+    fields = (
+        "name",
+        "campus",
+        "district",
+        "state",
+        "nvs_region",
+        "udise_code",
+        "established_year",
+        "motto",
+        "about",
+    )
+
+    def has_add_permission(self, request):
+        return not VidyalayaProfile.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Circular)
+class CircularAdmin(admin.ModelAdmin):
+    list_display = ("title", "audience", "published_on", "is_published")
+    list_filter = ("audience", "is_published", "published_on")
+    search_fields = ("title", "body")
+    autocomplete_fields = ("created_by",)
+    ordering = ("-published_on", "-pk")
+
+
+@admin.register(MessMenu)
+class MessMenuAdmin(admin.ModelAdmin):
+    list_display = ("date", "breakfast", "lunch", "evening_snacks", "dinner")
+    list_filter = ("date",)
+    search_fields = ("breakfast", "lunch", "dinner", "note")
+    ordering = ("-date",)
+
+
+@admin.register(OutingPass)
+class OutingPassAdmin(admin.ModelAdmin):
+    list_display = (
+        "date",
+        "student",
+        "purpose",
+        "destination",
+        "status",
+        "issued_by",
+    )
+    list_filter = ("date", "status")
+    search_fields = (
+        "student__admission_number",
+        "student__first_name",
+        "student__last_name",
+        "purpose",
+        "destination",
+    )
+    autocomplete_fields = ("student", "issued_by")
+    list_select_related = ("student", "issued_by")
+    ordering = ("-date", "-departure_time")
+
+
+@admin.register(StudentOffice)
+class StudentOfficeAdmin(admin.ModelAdmin):
+    list_display = ("role", "student", "house", "academic_year")
+    list_filter = ("academic_year", "role", "house")
+    search_fields = ("student__first_name", "student__last_name", "student__admission_number")
+    autocomplete_fields = ("student", "academic_year", "house")
+
+
+@admin.register(HouseCompetition)
+class HouseCompetitionAdmin(admin.ModelAdmin):
+    list_display = ("name", "kind", "held_on", "academic_year")
+    list_filter = ("academic_year", "kind")
+    search_fields = ("name", "venue")
+
+
+@admin.register(HouseCompetitionResult)
+class HouseCompetitionResultAdmin(admin.ModelAdmin):
+    list_display = ("competition", "house", "position", "points")
+    list_filter = ("house", "competition__academic_year")
+
+
+@admin.register(SickBayVisit)
+class SickBayVisitAdmin(admin.ModelAdmin):
+    list_display = ("visited_on", "student", "complaint", "referred_out")
+    list_filter = ("visited_on", "referred_out")
+    search_fields = ("student__first_name", "student__last_name", "complaint")
+    autocomplete_fields = ("student", "recorded_by")
+
+
+@admin.register(VisitorPass)
+class VisitorPassAdmin(admin.ModelAdmin):
+    list_display = ("visited_on", "visitor_name", "student", "purpose")
+    list_filter = ("visited_on",)
+    search_fields = ("visitor_name", "student__first_name", "student__last_name")
+    autocomplete_fields = ("student",)
+
+
+@admin.register(LibraryBook)
+class LibraryBookAdmin(admin.ModelAdmin):
+    list_display = ("accession_no", "title", "author", "subject")
+    search_fields = ("accession_no", "title", "author")
+
+
+@admin.register(LibraryIssue)
+class LibraryIssueAdmin(admin.ModelAdmin):
+    list_display = ("book", "student", "issued_on", "due_on", "returned_on")
+    list_filter = ("issued_on",)
+    autocomplete_fields = ("book", "student")
+
+
+@admin.register(ExamTerm)
+class ExamTermAdmin(admin.ModelAdmin):
+    list_display = ("name", "academic_year", "starts_on", "ends_on")
+    list_filter = ("academic_year",)
+    search_fields = ("name",)
+
+
+@admin.register(AssessmentMark)
+class AssessmentMarkAdmin(admin.ModelAdmin):
+    list_display = ("term", "student", "subject", "marks_obtained", "max_marks")
+    list_filter = ("term", "subject")
+    autocomplete_fields = ("term", "student", "subject")
+
+
+@admin.register(CommitteeSeat)
+class CommitteeSeatAdmin(admin.ModelAdmin):
+    list_display = ("kind", "role", "member_name", "academic_year")
+    list_filter = ("kind", "academic_year")
+
+
+@admin.register(VidyalayaEvent)
+class VidyalayaEventAdmin(admin.ModelAdmin):
+    list_display = ("held_on", "title", "kind", "venue", "academic_year")
+    list_filter = ("kind", "academic_year")
+    search_fields = ("title", "venue")
+
+
+@admin.register(VvnEntry)
+class VvnEntryAdmin(admin.ModelAdmin):
+    list_display = ("student", "academic_year", "amount", "is_paid")
+    list_filter = ("academic_year", "is_paid")
+    autocomplete_fields = ("student", "academic_year")
+
+
+@admin.register(MigrationRecord)
+class MigrationRecordAdmin(admin.ModelAdmin):
+    list_display = ("direction", "student", "other_jnv", "stream", "academic_year")
+    list_filter = ("direction", "academic_year")
+    search_fields = ("student__first_name", "student__last_name", "other_jnv")
+    autocomplete_fields = ("student", "academic_year")

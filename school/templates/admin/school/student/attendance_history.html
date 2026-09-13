@@ -12,6 +12,8 @@
 {% endblock %}
 
 {% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
 <p class="history-meta">
   {{ student.full_name }} ({{ student.admission_number }})
   · Current class: {{ student.class_section }}
@@ -134,4 +136,5 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% endblock %}

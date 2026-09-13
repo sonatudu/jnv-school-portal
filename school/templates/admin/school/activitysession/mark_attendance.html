@@ -18,6 +18,8 @@
 {% endblock %}
 
 {% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
 <div class="attendance-header">
   <p class="attendance-meta">
     {{ session.date }}
@@ -64,7 +66,7 @@
   <div class="attendance-actions">
     <button type="submit" class="default" name="action" value="save">Save</button>
     <button type="submit" class="button" name="action" value="save_unmarked_present">Save unmarked as Present</button>
-    <a href="{% url 'admin:school_activitysession_changelist' %}" class="button cancel-link">Back to sessions</a>
+    <a href="{% url 'admin:school_activitysession_changelist' %}" class="button cancel-link">Cancel</a>
   </div>
 </form>
 
@@ -82,4 +84,5 @@
   });
 })();
 </script>
+</div>
 {% endblock %}

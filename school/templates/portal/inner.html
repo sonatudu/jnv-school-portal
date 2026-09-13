@@ -1,0 +1,10 @@
+{% extends "portal/base.html" %}
+{% block content %}
+<div class="opened-box">
+  {% include "includes/back_link.html" %}
+  <div class="opened-body">
+    {% block panel %}{% endblock %}
+    {% block extra %}{% endblock %}
+  </div>
+</div>
+{% endblock %}

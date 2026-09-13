@@ -1,0 +1,8 @@
+{% if nav_back %}
+<a class="back-link" href="{{ nav_back.href }}" aria-label="Back to {{ nav_back.label }}" title="Back to {{ nav_back.label }}">
+  <svg class="back-link-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+    <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M11 8H5.1"/>
+    <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M7.6 5.15 4.7 8l2.9 2.85"/>
+  </svg>
+</a>
+{% endif %}
