@@ -1,0 +1,88 @@
+{% extends "portal/inner.html" %}
+{% block title %}Attendance · {{ student.full_name }}{% endblock %}
+{% block panel %}
+  <h1>{{ student.full_name }}</h1>
+  <p class="muted">
+    {{ student.admission_number }}
+    · Current class: {{ student.class_section }}
+    · Current year: {{ student.academic_year }}
+  </p>
+  <form class="filters" method="get">
+    <label>Academic year
+      <select name="academic_year">
+        {% for year in years %}
+          <option value="{{ year.pk }}" {% if selected_year and selected_year.pk == year.pk %}selected{% endif %}>{{ year }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn" type="submit">Show</button>
+  </form>
+  <p>
+    Present: {{ history.status_counts.present }}
+    · Absent: {{ history.status_counts.absent }}
+    · Late: {{ history.status_counts.late }}
+    · Leave: {{ history.status_counts.leave }}
+    · OD: {{ history.status_counts.on_duty|default:0 }}
+    · Sick: {{ history.status_counts.sick|default:0 }}
+    · Total marked: {{ history.total_marked }}
+    · Eligible sessions: {{ history.total_eligible }}
+    · Attendance: {{ percentage_display }}
+  </p>
+  <p class="muted">Percentage is Marked / Eligible. Unmarked is not Absent.</p>
+
+  <h2>Marked attendance</h2>
+  <div class="table-wrap">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Time</th>
+        <th>Session</th>
+        <th>Audience</th>
+        <th>Status</th>
+        <th>Taken by</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in history.marked_rows %}
+      <tr>
+        <td>{{ row.session.date }}</td>
+        <td>{{ row.session.start_time }}–{{ row.session.end_time }}</td>
+        <td>{{ row.session.name }} ({{ row.session.activity_type }})</td>
+        <td>{{ row.session.get_audience_kind_display }}{% if row.target %} · {{ row.target }}{% endif %}</td>
+        <td>{{ row.entry.get_status_display }}{% if row.is_orphan %} · not on current roster{% endif %}</td>
+        <td>{{ row.entry.taken_by }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6">No marked attendance in this year.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Not marked yet</h2>
+  <div class="table-wrap">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Time</th>
+        <th>Session</th>
+        <th>Audience</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in history.unmarked_rows %}
+      <tr>
+        <td>{{ row.session.date }}</td>
+        <td>{{ row.session.start_time }}–{{ row.session.end_time }}</td>
+        <td>{{ row.session.name }} ({{ row.session.activity_type }})</td>
+        <td>{{ row.session.get_audience_kind_display }}{% if row.target %} · {{ row.target }}{% endif %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4">No unmarked eligible sessions in this year.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endblock %}

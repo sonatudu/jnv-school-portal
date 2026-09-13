@@ -1,0 +1,78 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% if vidyalaya %}{{ vidyalaya.short_name }}{% else %}JNV East Singhbhum{% endif %}{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="icon" href="{% static 'school/logo.png' %}" type="image/png">
+  <link rel="stylesheet" href="{% static 'school/portal.css' %}?v=select7">
+  <link rel="stylesheet" href="{% static 'school/select.css' %}?v=select15">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <div class="tricolor" aria-hidden="true"></div>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <a class="brand" href="{% if user.is_authenticated %}{% url 'portal-dashboard' %}{% else %}{% url 'portal-home' %}{% endif %}">
+        <img class="emblem" src="{% static 'school/logo.png' %}" width="72" height="72" alt="JNV East Singhbhum">
+        <span class="brand-text">
+          <span class="brand-kicker">Navodaya Vidyalaya Samiti{% if vidyalaya %} · {{ vidyalaya.nvs_region }} Region{% endif %}</span>
+          <span class="brand-name">{% if vidyalaya %}{{ vidyalaya.short_name }}{% else %}JNV East Singhbhum{% endif %}</span>
+          <span class="brand-hi">जवाहर नवोदय विद्यालय, पूर्वी सिंहभूम</span>
+          {% if vidyalaya %}
+            <span class="brand-place">{{ vidyalaya.place_line }}</span>
+          {% else %}
+            <span class="brand-place">Balikudia, Baharagora · Jharkhand</span>
+          {% endif %}
+        </span>
+      </a>
+      {% if user.is_authenticated %}
+        <div class="who-block">
+          <p class="who">{{ user.get_full_name|default:user.username }}</p>
+          <p class="who-role">{{ user.get_category_display|default:"" }}</p>
+        </div>
+      {% endif %}
+    </div>
+    <div class="menubar">
+      <nav>
+        {% if user.is_authenticated %}
+          {% if user.category == "parent" %}
+            <a href="{% url 'portal-parent' %}" {% if request.resolver_match.url_name == "portal-parent" %}class="is-active"{% endif %}>My ward</a>
+          {% elif user.category == "staff" or user.category == "administration" %}
+            <a href="{% url 'portal-staff' %}" {% if request.resolver_match.url_name == "portal-staff" %}class="is-active"{% endif %}>Today</a>
+            <a href="{% url 'portal-exceptions' %}" {% if request.resolver_match.url_name == "portal-exceptions" %}class="is-active"{% endif %}>Sick &amp; leave</a>
+            <a href="{% url 'portal-outings' %}" {% if request.resolver_match.url_name == "portal-outings" %}class="is-active"{% endif %}>Gate pass</a>
+          {% endif %}
+          <a href="{% url 'portal-mess' %}" {% if request.resolver_match.url_name == "portal-mess" %}class="is-active"{% endif %}>Mess</a>
+          <a href="{% url 'portal-circulars' %}" {% if request.resolver_match.url_name == "portal-circulars" %}class="is-active"{% endif %}>Circulars</a>
+          <a href="{% url 'portal-life' %}" {% if request.resolver_match.url_name == "portal-life" or "life/" in request.path %}class="is-active"{% endif %}>Vidyalaya life</a>
+          {% if user.is_staff %}
+            <a href="{% url 'admin:index' %}">Admin</a>
+          {% endif %}
+          <form class="nav-form" method="post" action="{% url 'logout' %}">
+            {% csrf_token %}
+            <button type="submit">Log out</button>
+          </form>
+        {% else %}
+          <a class="nav-login" href="{% url 'login' %}">Log in</a>
+          <a href="{% url 'admin:index' %}">Admin</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    <div class="footer-inner">
+      <strong>{% if vidyalaya %}{{ vidyalaya.display_name }}{% else %}JNV East Singhbhum{% endif %}</strong>
+      <span>{% if vidyalaya %}Est. {{ vidyalaya.established_year }} · {{ vidyalaya.nvs_region }} Region{% endif %}</span>
+      <em class="motto">{% if vidyalaya %}{{ vidyalaya.motto }}{% else %}Prajñānam Brahma{% endif %}</em>
+    </div>
+  </footer>
+  <script src="{% static 'school/select.js' %}?v=select13"></script>
+</body>
+</html>

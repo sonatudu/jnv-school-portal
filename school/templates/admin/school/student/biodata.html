@@ -1,0 +1,88 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
+<h1>{{ student.full_name }}</h1>
+<p>{{ student.admission_number }} · {{ student.class_section }} · {{ student.academic_year }}</p>
+
+<h2>Personal details</h2>
+<table>
+  <tr><th>Admission No.</th><td>{{ student.admission_number }}</td></tr>
+  <tr><th>Roll number</th><td>{{ student.roll_number }}</td></tr>
+  <tr><th>Full name</th><td>{{ student.full_name }}</td></tr>
+  <tr><th>First name</th><td>{{ student.first_name }}</td></tr>
+  <tr><th>Middle name</th><td>{{ student.middle_name|default:"—" }}</td></tr>
+  <tr><th>Last name</th><td>{{ student.last_name }}</td></tr>
+  <tr><th>Gender</th><td>{{ student.get_gender_display }}</td></tr>
+  <tr><th>Date of birth</th><td>{{ student.date_of_birth }}</td></tr>
+  <tr><th>Active</th><td>{{ student.is_active|yesno:"Yes,No" }}</td></tr>
+</table>
+
+<h2>Family and JNV details</h2>
+<table>
+  <tr><th>Father's name</th><td>{{ student.father_name|default:"—" }}</td></tr>
+  <tr><th>Mother's name</th><td>{{ student.mother_name|default:"—" }}</td></tr>
+  <tr><th>Category</th><td>{{ student.get_social_category_display|default:"—" }}</td></tr>
+  <tr><th>Rural/Urban</th><td>{{ student.get_area_type_display|default:"—" }}</td></tr>
+  <tr><th>Native district</th><td>{{ student.native_district|default:"—" }}</td></tr>
+  <tr><th>Blood group</th><td>{{ student.get_blood_group_display|default:"—" }}</td></tr>
+  <tr><th>Current class</th><td>{{ student.class_section }}</td></tr>
+  <tr><th>Academic year</th><td>{{ student.academic_year }}</td></tr>
+</table>
+
+{% include "admin/includes/extra_biodata.html" %}
+
+<h2>House</h2>
+<table>
+  <thead>
+    <tr><th>Year</th><th>House</th></tr>
+  </thead>
+  <tbody>
+    {% for item in houses %}
+    <tr><td>{{ item.academic_year }}</td><td>{{ item.house }}</td></tr>
+    {% empty %}
+    <tr><td colspan="2">No house allotted.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Class placement history</h2>
+<table>
+  <thead>
+    <tr><th>Year</th><th>Class</th></tr>
+  </thead>
+  <tbody>
+    {% for item in class_history %}
+    <tr><td>{{ item.academic_year }}</td><td>{{ item.class_section }}</td></tr>
+    {% empty %}
+    <tr><td colspan="2">No class placement history.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Guardians</h2>
+<table>
+  <thead>
+    <tr><th>Parent login</th><th>Name</th></tr>
+  </thead>
+  <tbody>
+    {% for item in guardians %}
+    <tr>
+      <td>{{ item.parent_profile.user.username }}</td>
+      <td>{{ item.parent_profile.user.get_full_name|default:item.parent_profile.user.username }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="2">No guardian linked.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p>
+  <a href="{{ attendance_url }}">Attendance history</a>
+  {% if can_edit %}
+    · <a href="{{ change_url }}">Edit student record</a>
+  {% endif %}
+</p>
+</div>
+{% endblock %}

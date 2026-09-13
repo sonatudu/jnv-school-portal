@@ -1,0 +1,47 @@
+{% extends "portal/inner.html" %}
+{% block title %}Vidyalaya life · {{ vidyalaya.short_name|default:"JNV" }}{% endblock %}
+{% block panel %}
+  <h1>Vidyalaya life</h1>
+  <p class="muted">JNV East Singhbhum operations for {% if year %}{{ year }}{% else %}the current year{% endif %}: houses, CCA, library, exams, VMC, sick bay, and migration. Figures are hypothetical where marked in Admin.</p>
+{% endblock %}
+{% block extra %}
+<div class="jnv-ops-grid">
+  <a class="jnv-ops-card" href="{% url 'portal-house-life' %}"><strong>Houses &amp; offices</strong><span>Inter-house points, captains, prefects</span></a>
+  <a class="jnv-ops-card" href="{% url 'portal-events' %}"><strong>Calendar</strong><span>CCA, pace-setting, games, assembly</span></a>
+  <a class="jnv-ops-card" href="{% url 'portal-library' %}"><strong>Library</strong><span>Issues and returns</span></a>
+  <a class="jnv-ops-card" href="{% url 'portal-exams' %}"><strong>Exams</strong><span>Periodic Test marks</span></a>
+  <a class="jnv-ops-card" href="{% url 'portal-vmc' %}"><strong>VMC / PAC</strong><span>Management and parent committees</span></a>
+  {% if is_staff %}
+  <a class="jnv-ops-card" href="{% url 'portal-sick-bay' %}"><strong>Sick bay</strong><span>Staff-nurse register</span></a>
+  <a class="jnv-ops-card" href="{% url 'portal-visitors' %}"><strong>Visitors</strong><span>Sunday meeting gate register</span></a>
+  <a class="jnv-ops-card" href="{% url 'portal-migration' %}"><strong>Migration</strong><span>Class XI incoming / outgoing</span></a>
+  <a class="jnv-ops-card" href="{% url 'portal-vvn' %}"><strong>VVN</strong><span>Vidyalaya Vikas Nidhi ledger</span></a>
+  {% endif %}
+</div>
+<div class="two-col">
+  <div class="panel">
+    <h2>House cup (running total)</h2>
+    <table class="data">
+      <thead><tr><th>House</th><th>Points</th></tr></thead>
+      <tbody>
+        {% for row in house_totals %}
+        <tr><td>{{ row.house__name }}</td><td>{{ row.total }}</td></tr>
+        {% empty %}
+        <tr><td colspan="2">No inter-house results yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <h2>Recent / upcoming</h2>
+    {% for item in events %}
+      <div class="circular-item">
+        <strong>{{ item.title }}</strong><br>
+        <span class="muted">{{ item.held_on }} · {{ item.get_kind_display }}{% if item.venue %} · {{ item.venue }}{% endif %}</span>
+      </div>
+    {% empty %}
+      <p class="muted">No events.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

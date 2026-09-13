@@ -1,0 +1,29 @@
+{% extends "portal/base.html" %}
+{% load static %}
+{% block title %}{{ vidyalaya.display_name|default:"JNV East Singhbhum" }}{% endblock %}
+{% block content %}
+<section class="hero-panel">
+  <div class="hero-copy">
+    <p class="eyebrow">Residential co-educational · CBSE · Classes VI–XII</p>
+    <h1>{% if vidyalaya %}{{ vidyalaya.display_name }}{% else %}Jawahar Navodaya Vidyalaya, East Singhbhum{% endif %}</h1>
+    <p class="hi-line">जवाहर नवोदय विद्यालय, पूर्वी सिंहभूम — बालिकुडिया, बहरागोड़ा</p>
+    <p class="lede">{% if vidyalaya %}{{ vidyalaya.about }}{% else %}A residential school under Navodaya Vidyalaya Samiti, Patna Region.{% endif %}</p>
+    <p class="lede-sub">Staff mark class and house attendance, MOD duty, sick / OD / leave, mess, and gate passes. Parents see their ward’s house, attendance, circulars, and today’s mess.</p>
+    <p class="toolbar">
+      <a class="btn" href="{% url 'login' %}">Log in</a>
+      <a class="btn ghost" href="{% url 'admin:index' %}">Administration</a>
+    </p>
+  </div>
+  <aside class="hero-aside">
+    <img class="hero-logo" src="{% static 'school/logo.png' %}" width="168" height="168" alt="JNV East Singhbhum seal">
+    <span class="motto">{% if vidyalaya %}{{ vidyalaya.motto }}{% else %}Prajñānam Brahma{% endif %}</span>
+    <p>प्रज्ञानं ब्रह्म</p>
+    <ul class="hero-facts">
+      <li>Campus at Balikudia, Baharagora</li>
+      <li>East Singhbhum, Jharkhand 832101</li>
+      <li>NVS Patna Region</li>
+      <li>House system · PT · assembly · night roll call</li>
+    </ul>
+  </aside>
+</section>
+{% endblock %}

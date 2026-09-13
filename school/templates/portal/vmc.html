@@ -1,0 +1,21 @@
+{% extends "portal/inner.html" %}
+{% block title %}VMC · {{ vidyalaya.short_name|default:"JNV" }}{% endblock %}
+{% block panel %}
+  <h1>Committees</h1>
+  <p class="muted">{% if year %}{{ year }} · {% endif %}Vidyalaya Management Committee and parent committee (PAC).</p>
+  <table class="data">
+    <thead><tr><th>Body</th><th>Role</th><th>Member</th><th>Organisation</th></tr></thead>
+    <tbody>
+      {% for item in seats %}
+      <tr>
+        <td>{{ item.get_kind_display }}</td>
+        <td>{{ item.role }}</td>
+        <td>{{ item.member_name }}</td>
+        <td>{{ item.organisation|default:"—" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4">No seats recorded.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

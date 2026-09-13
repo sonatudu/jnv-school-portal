@@ -1,0 +1,36 @@
+<h2>Extra biodata</h2>
+{% if extra_rows or can_edit %}
+<table>
+  {% for row in extra_rows %}
+    <tr>
+      {% if can_edit %}
+        <td colspan="2">
+          <form method="post" style="display:flex;gap:0.5em;align-items:flex-start;flex-wrap:wrap;">
+            {% csrf_token %}
+            <input type="hidden" name="row_id" value="{{ row.pk }}">
+            <input type="text" name="label" value="{{ row.label }}" required maxlength="120" aria-label="Label">
+            <textarea name="value" rows="2" cols="40" aria-label="Value">{{ row.value }}</textarea>
+            <button type="submit" name="biodata_action" value="save">Save</button>
+            <button type="submit" name="biodata_action" value="delete">Remove</button>
+          </form>
+        </td>
+      {% else %}
+        <th>{{ row.label }}</th>
+        <td>{{ row.value|default:"—" }}</td>
+      {% endif %}
+    </tr>
+  {% empty %}
+    {% if not can_edit %}
+      <tr><td colspan="2">No extra biodata.</td></tr>
+    {% endif %}
+  {% endfor %}
+</table>
+{% endif %}
+{% if can_edit %}
+<form method="post" style="margin-top:0.75em;display:flex;gap:0.5em;align-items:flex-start;flex-wrap:wrap;">
+  {% csrf_token %}
+  <input type="text" name="label" placeholder="New label" maxlength="120" required aria-label="New label">
+  <textarea name="value" rows="2" cols="40" placeholder="Value" aria-label="New value"></textarea>
+  <button type="submit" name="biodata_action" value="add">Add row</button>
+</form>
+{% endif %}

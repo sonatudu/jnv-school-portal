@@ -1,0 +1,15 @@
+{% extends "portal/inner.html" %}
+{% block title %}Circulars · {{ vidyalaya.display_name|default:"JNV" }}{% endblock %}
+{% block panel %}
+  <h1>Circulars</h1>
+  <p class="muted">Office orders and notices from the Principal / Vice-Principal.</p>
+  {% for item in circulars %}
+    <article class="article-card">
+      <h2>{{ item.title }}</h2>
+      <p class="muted">{{ item.published_on }} · {{ item.get_audience_display }}</p>
+      <p>{{ item.body }}</p>
+    </article>
+  {% empty %}
+    <p>No circulars for your role.</p>
+  {% endfor %}
+{% endblock %}

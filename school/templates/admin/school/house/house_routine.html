@@ -1,0 +1,33 @@
+{% extends "admin/base_site.html" %}
+{% block bodyclass %}{{ block.super }} jnv-hub{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
+{% include "admin/includes/year_row.html" with opened_name=house.name %}
+
+{% include "admin/school/house/_house_nav.html" %}
+
+<table>
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Period</th>
+      <th>Activity</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for slot in routine_slots %}
+    <tr>
+      <td>{{ slot.start_time }}–{{ slot.end_time }}</td>
+      <td>{{ slot.name }}</td>
+      <td>{{ slot.activity_type }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="3">No house routine for the selected year.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

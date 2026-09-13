@@ -1,0 +1,32 @@
+{% extends "portal/base.html" %}
+{% load static %}
+{% block title %}Log in · JNV East Singhbhum{% endblock %}
+{% block body_class %}page-login{% endblock %}
+{% block content %}
+<div class="login-shell">
+  <div class="opened-box login-card">
+    {% include "includes/back_link.html" %}
+    <div class="opened-body">
+      <img class="emblem emblem-solo" src="{% static 'school/logo.png' %}" width="112" height="112" alt="JNV East Singhbhum">
+      <h1>JNV East Singhbhum</h1>
+      <p class="muted" style="text-align:center;">Balikudia, Baharagora · staff, office, and parents</p>
+      {% if form.errors %}
+        <p class="errors">Please enter a correct username and password.</p>
+      {% endif %}
+      <form method="post" action="{% url 'login' %}">
+        {% csrf_token %}
+        <div class="field">
+          <label for="id_username">Username</label>
+          {{ form.username }}
+        </div>
+        <div class="field">
+          <label for="id_password">Password</label>
+          {{ form.password }}
+        </div>
+        <input type="hidden" name="next" value="{{ next }}">
+        <button class="btn" type="submit" style="width:100%;">Log in</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

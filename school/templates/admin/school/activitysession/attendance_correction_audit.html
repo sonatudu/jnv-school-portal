@@ -13,6 +13,8 @@
 {% endblock %}
 
 {% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
 <p>Correction history for authorized attendance sessions. This is not the current attendance state.</p>
 
 <form method="get" class="audit-form">
@@ -130,4 +132,5 @@
     {% endif %}
   </p>
 {% endif %}
+</div>
 {% endblock %}

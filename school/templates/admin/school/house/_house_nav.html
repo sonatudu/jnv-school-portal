@@ -1,0 +1,6 @@
+<nav class="jnv-section-nav" aria-label="House sections">
+  <a href="{{ overview_url }}"{% if current_house_section == "home" %} aria-current="page"{% endif %}>House staff</a>
+  <a href="{{ students_url }}"{% if current_house_section == "students" %} aria-current="page"{% endif %}>Students</a>
+  <a href="{{ attendance_url }}"{% if current_house_section == "attendance" %} aria-current="page"{% endif %}>Attendance</a>
+  <a href="{{ routine_url }}"{% if current_house_section == "routine" %} aria-current="page"{% endif %}>Routine</a>
+</nav>

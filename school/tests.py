@@ -35,16 +35,22 @@ from .models import (
     AttendanceStatus,
     AudienceKind,
     ClassSection,
+    ClassGradeStaffAssignment,
+    ClassStaffRole,
     ClassTimetableEntry,
     DutyType,
     House,
     HouseMasterAssignment,
+    HouseStaffRole,
     Routine,
     RoutineSlot,
     SchoolCalendarDay,
     StaffDutyAssignment,
     Student,
+    StudentBiodataRow,
     StudentClassMembership,
+    StudentTableColumn,
+    StudentTableLayout,
     StudentGroup,
     StudentGroupMembership,
     StudentHouseMembership,
@@ -75,7 +81,7 @@ class AttendanceRosterTests(TestCase):
             section_name="B",
             display_name="VI-B",
         )
-        self.house = House.objects.create(name="Aravali", code="AR")
+        self.house = House.objects.create(name="Aravali")
         self.staff = User.objects.create_user(
             username="teacher1",
             password="x",
@@ -427,7 +433,7 @@ class AttendanceAuthorizationAdminTests(TestCase):
             section_name="A",
             display_name="VI-A",
         )
-        self.house = House.objects.create(name="Aravali", code="AR")
+        self.house = House.objects.create(name="Aravali")
         self.responsible = User.objects.create_user(
             username="responsible",
             password="x",
@@ -1278,7 +1284,7 @@ class ClassAttendanceReportTests(TestCase):
             section_name="B",
             display_name="VI-B",
         )
-        self.house = House.objects.create(name="Aravali", code="AR")
+        self.house = House.objects.create(name="Aravali")
         self.admin_user = User.objects.create_user(
             username="crep-admin",
             password="x",
@@ -1669,8 +1675,8 @@ class HouseAttendanceReportTests(TestCase):
             section_name="A",
             display_name="VI-A",
         )
-        self.house = House.objects.create(name="Aravali", code="AR")
-        self.other_house = House.objects.create(name="Nilgiri", code="NL")
+        self.house = House.objects.create(name="Aravali")
+        self.other_house = House.objects.create(name="Nilgiri")
         self.admin_user = User.objects.create_user(
             username="hrep-admin",
             password="x",
@@ -2451,8 +2457,8 @@ class SchoolAttendanceReportTests(TestCase):
             section_name="B",
             display_name="VI-B",
         )
-        self.house = House.objects.create(name="Aravali", code="AR")
-        self.other_house = House.objects.create(name="Nilgiri", code="NL")
+        self.house = House.objects.create(name="Aravali")
+        self.other_house = House.objects.create(name="Nilgiri")
         self.admin_user = User.objects.create_user(
             username="srep-admin",
             password="x",
@@ -2966,7 +2972,7 @@ class SchoolAttendanceReportTests(TestCase):
         self.assertEqual(
             kinds,
             {
-                "Class section",
+                "Class",
                 "House",
                 "Whole school",
                 "Named student group",
@@ -3103,7 +3109,7 @@ class AttendanceCoverageTests(TestCase):
             section_name="B",
             display_name="VI-B",
         )
-        self.house = House.objects.create(name="Aravali", code="AR")
+        self.house = House.objects.create(name="Aravali")
         self.admin_user = User.objects.create_user(
             username="cov-admin",
             password="x",
@@ -3616,7 +3622,7 @@ class AttendanceCorrectionAuditTests(TestCase):
             section_name="B",
             display_name="VI-B",
         )
-        self.house = House.objects.create(name="Aravali", code="AR")
+        self.house = House.objects.create(name="Aravali")
         self.admin_user = User.objects.create_user(
             username="aud-admin",
             password="x",
@@ -4330,7 +4336,7 @@ class StudentClassMembershipTests(TestCase):
         self.assertEqual(list(students_for_session(vi_b_session)), [self.student])
 
     def test_house_and_group_rosters_unchanged(self):
-        house = House.objects.create(name="Aravali", code="AR")
+        house = House.objects.create(name="Aravali")
         other = Student.objects.create(
             admission_number="CM2",
             roll_number=2,
@@ -4419,6 +4425,885 @@ class StudentClassMembershipTests(TestCase):
             reverse("admin:school_student_change", args=[self.student.pk])
         )
         self.assertContains(change, "Class placement history")
+        self.assertContains(change, 'name="blood_group"')
+        self.assertContains(change, '<option value="AB+">AB+</option>')
+        self.assertContains(change, '<option value="O-">O-</option>')
+
+    def test_classes_list_in_seniority_order(self):
+        self.assertEqual(
+            list(ClassSection.objects.values_list("display_name", flat=True)),
+            ["VI-A", "VI-B", "VII-A"],
+        )
+        self.client.force_login(self.admin_user)
+        response = self.client.get(reverse("admin:school_classsection_changelist"))
+        html = response.content.decode()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(">VI-A</a>", html)
+        self.assertIn(">VI-B</a>", html)
+        self.assertIn(">VII-A</a>", html)
+        self.assertLess(html.find(">VI-A</a>"), html.find(">VI-B</a>"))
+        self.assertLess(html.find(">VI-B</a>"), html.find(">VII-A</a>"))
+
+    def test_class_overview_students_and_optional_assistant(self):
+        self.client.force_login(self.admin_user)
+        url = reverse(
+            "admin:school_classsection_class_overview",
+            args=[self.vi_a.pk],
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        row_start = html.find('class="jnv-year-row"')
+        self.assertNotEqual(row_start, -1)
+        row_html = html[row_start : row_start + 900]
+        self.assertIn("VI-A", row_html)
+        self.assertIn("Academic year", row_html)
+        self.assertLess(row_html.find("VI-A"), row_html.find("Academic year"))
+        self.assertContains(response, "Class Teacher")
+        self.assertContains(response, "Assistant Class Teacher")
+        self.assertContains(response, "Students")
+        self.assertContains(response, "Attendance")
+        self.assertContains(response, "Routine")
+        self.assertNotContains(response, "Father's name")
+        self.assertNotContains(response, self.student.full_name)
+        students_url = reverse(
+            "admin:school_classsection_class_students",
+            args=[self.vi_a.pk],
+        )
+        students_page = self.client.get(students_url)
+        self.assertEqual(students_page.status_code, 200)
+        self.assertContains(students_page, self.student.full_name)
+        self.assertContains(
+            students_page,
+            reverse("admin:school_student_biodata", args=[self.student.pk]),
+        )
+        self.assertContains(students_page, "Father's name")
+        self.assertContains(students_page, "Date of birth")
+        self.assertContains(students_page, "House")
+        bio = self.client.get(
+            reverse("admin:school_student_biodata", args=[self.student.pk])
+        )
+        self.assertEqual(bio.status_code, 200)
+        self.assertContains(bio, self.student.full_name)
+        self.assertContains(bio, "Personal details")
+        self.assertContains(bio, "Father's name")
+        self.assertContains(response, "Assistant Class Teacher")
+        self.assertContains(response, 'id="assistant-class-teacher"')
+        self.assertContains(response, 'id="class-teacher-profile"')
+        self.assertContains(response, 'aria-label="Teacher profile"')
+        self.assertNotContains(response, ">Open</a>")
+
+    def test_class_attendance_lists_students_and_saves_for_a_date(self):
+        self.client.force_login(self.admin_user)
+        url = reverse(
+            "admin:school_classsection_class_attendance",
+            args=[self.vi_a.pk],
+        )
+        response = self.client.get(
+            url,
+            {"academic_year": self.year.pk, "date": self.day.isoformat()},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.student.full_name)
+        self.assertContains(response, self.day.isoformat())
+        self.assertContains(response, "Mark all Present")
+        self.assertContains(response, "Mark all Absent")
+        self.assertContains(response, "Strength")
+        self.assertContains(response, ">OD</th>")
+        self.assertContains(response, ">Sick</th>")
+        self.assertContains(response, ">Leave</th>")
+        posted = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "date": self.day.isoformat(),
+                f"status_{self.class_session.pk}_{self.student.pk}": AttendanceStatus.ABSENT,
+            },
+        )
+        self.assertEqual(posted.status_code, 302)
+        entry = AttendanceEntry.objects.get(
+            activity_session=self.class_session,
+            student=self.student,
+        )
+        self.assertEqual(entry.status, AttendanceStatus.ABSENT)
+        other = self.client.get(
+            url,
+            {"academic_year": self.year.pk, "date": date(2026, 9, 10).isoformat()},
+        )
+        self.assertEqual(other.status_code, 200)
+
+    def test_class_routine_page(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(
+            reverse(
+                "admin:school_classsection_class_routine",
+                args=[self.vi_a.pk],
+            )
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Routine")
+
+    def test_class_and_assistant_teacher_must_differ(self):
+        staff = User.objects.create_user(
+            username="class-teacher-1",
+            password="x",
+            category=UserCategory.STAFF,
+        )
+        profile = TeacherProfile.objects.create(user=staff)
+        self.client.force_login(self.admin_user)
+        url = reverse(
+            "admin:school_classsection_class_overview",
+            args=[self.vi_a.pk],
+        )
+        response = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "class_teacher": str(profile.pk),
+                "assistant_class_teacher": str(profile.pk),
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        assignments = ClassGradeStaffAssignment.objects.filter(
+            class_section=self.vi_a,
+            academic_year=self.year,
+        )
+        self.assertEqual(assignments.count(), 1)
+        self.assertEqual(assignments.get().role, ClassStaffRole.CLASS_TEACHER)
+        self.assertEqual(assignments.get().teacher, profile)
+
+    def test_admin_can_add_extra_student_biodata_row(self):
+        self.client.force_login(self.admin_user)
+        url = reverse("admin:school_student_biodata", args=[self.student.pk])
+        response = self.client.post(
+            url,
+            {
+                "biodata_action": "add",
+                "label": "Aadhaar last 4",
+                "value": "4321",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        page = self.client.get(url)
+        self.assertContains(page, "Aadhaar last 4")
+        self.assertContains(page, "4321")
+        self.assertContains(page, "Add row")
+        self.client.force_login(self.staff)
+        staff_page = self.client.get(url)
+        self.assertContains(staff_page, "Aadhaar last 4")
+        self.assertNotContains(staff_page, "Add row")
+        blocked = self.client.post(
+            url,
+            {
+                "biodata_action": "add",
+                "label": "Secret",
+                "value": "no",
+            },
+        )
+        self.assertEqual(blocked.status_code, 403)
+
+    def test_class_students_lists_by_stored_roll_number(self):
+        self.student.roll_number = 3
+        self.student.save()
+        Student.objects.create(
+            admission_number="CM-Z",
+            roll_number=1,
+            first_name="Zara",
+            last_name="Z",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.vi_a,
+            academic_year=self.year,
+        )
+        Student.objects.create(
+            admission_number="CM-M",
+            roll_number=2,
+            first_name="Maya",
+            last_name="M",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.vi_a,
+            academic_year=self.year,
+        )
+        other = Student.objects.create(
+            admission_number="CM-OTHER",
+            roll_number=1,
+            first_name="Nisha",
+            last_name="B",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.vi_b,
+            academic_year=self.year,
+        )
+        self.client.force_login(self.admin_user)
+        response = self.client.get(
+            reverse(
+                "admin:school_classsection_class_students",
+                args=[self.vi_a.pk],
+            ),
+            {"academic_year": self.year.pk},
+        )
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertLess(html.find("Zara Z"), html.find("Maya M"))
+        self.assertLess(html.find("Maya M"), html.find("Ada A"))
+        self.assertNotContains(response, other.full_name)
+        self.assertNotContains(response, "jnv-drag-handle")
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.roll_number, 3)
+
+    def test_student_add_form_has_class_and_roll_no(self):
+        self.client.force_login(self.admin_user)
+        add_url = reverse("admin:school_student_add")
+        page = self.client.get(add_url)
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, ">Class:</label>")
+        self.assertContains(page, 'for="id_roll_number">Roll no.</label>')
+        self.assertContains(page, 'name="class_section"')
+        self.assertContains(page, 'name="roll_number"')
+        self.assertContains(page, f'value="{self.year.pk}"')
+        self.assertContains(page, "Class and roll")
+
+        posted = self.client.post(
+            add_url,
+            {
+                "admission_number": "CM-NEW",
+                "roll_number": "2",
+                "first_name": "Zara",
+                "last_name": "Z",
+                "date_of_birth": "2014-02-02",
+                "gender": "female",
+                "class_section": str(self.vi_a.pk),
+                "academic_year": str(self.year.pk),
+                "is_active": "on",
+                "class_memberships-TOTAL_FORMS": "0",
+                "class_memberships-INITIAL_FORMS": "0",
+                "class_memberships-MIN_NUM_FORMS": "0",
+                "class_memberships-MAX_NUM_FORMS": "1000",
+                "guardian_links-TOTAL_FORMS": "0",
+                "guardian_links-INITIAL_FORMS": "0",
+                "guardian_links-MIN_NUM_FORMS": "0",
+                "guardian_links-MAX_NUM_FORMS": "1000",
+            },
+        )
+        self.assertEqual(posted.status_code, 302)
+        created = Student.objects.get(admission_number="CM-NEW")
+        self.assertEqual(created.class_section, self.vi_a)
+        self.assertEqual(created.roll_number, 2)
+        self.assertEqual(created.academic_year, self.year)
+        students_page = self.client.get(
+            reverse(
+                "admin:school_classsection_class_students",
+                args=[self.vi_a.pk],
+            ),
+            {"academic_year": self.year.pk},
+        )
+        html = students_page.content.decode()
+        self.assertContains(students_page, "Ada A")
+        self.assertContains(students_page, "Zara Z")
+        table_at = html.find("<th>Roll</th>")
+        self.assertNotEqual(table_at, -1)
+        self.assertLess(html.find("Ada A", table_at), html.find("Zara Z", table_at))
+        other_class = self.client.get(
+            reverse(
+                "admin:school_classsection_class_students",
+                args=[self.vi_b.pk],
+            ),
+            {"academic_year": self.year.pk},
+        )
+        self.assertNotContains(other_class, "Zara Z")
+
+    def test_class_students_search_filters_name_admission_and_roll(self):
+        zara = Student.objects.create(
+            admission_number="CM-Z99",
+            roll_number=8,
+            first_name="Zara",
+            last_name="Z",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.vi_a,
+            academic_year=self.year,
+        )
+        Student.objects.create(
+            admission_number="CM-M",
+            roll_number=2,
+            first_name="Maya",
+            last_name="M",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.vi_a,
+            academic_year=self.year,
+        )
+        other = Student.objects.create(
+            admission_number="CM-ZOUT",
+            roll_number=8,
+            first_name="Zara",
+            last_name="Other",
+            date_of_birth=date(2014, 1, 1),
+            gender="female",
+            class_section=self.vi_b,
+            academic_year=self.year,
+        )
+        url = reverse(
+            "admin:school_classsection_class_students",
+            args=[self.vi_a.pk],
+        )
+        self.client.force_login(self.admin_user)
+        blank = self.client.get(url, {"academic_year": self.year.pk, "q": ""})
+        self.assertContains(blank, "Ada A")
+        self.assertContains(blank, "Zara Z")
+        self.assertContains(blank, "Maya M")
+        self.assertContains(blank, 'name="q"')
+        self.assertContains(blank, 'aria-label="Search students"')
+        self.assertNotContains(blank, ">Search</button>")
+        self.assertNotContains(blank, 'class="jnv-class-search is-open"')
+        html = blank.content.decode()
+        self.assertLess(html.find("Ada A"), html.find("Maya M"))
+        self.assertLess(html.find("Maya M"), html.find("Zara Z"))
+
+        by_name = self.client.get(
+            url, {"academic_year": self.year.pk, "q": "zara"}
+        )
+        self.assertContains(by_name, zara.full_name)
+        self.assertNotContains(by_name, "Maya M")
+        self.assertNotContains(by_name, other.full_name)
+        self.assertContains(by_name, 'value="zara"')
+        self.assertContains(by_name, 'class="jnv-class-search is-open"')
+        self.assertContains(by_name, f'name="academic_year" value="{self.year.pk}"')
+
+        by_admission = self.client.get(
+            url, {"academic_year": self.year.pk, "q": "cm-z99"}
+        )
+        self.assertContains(by_admission, "Zara Z")
+        self.assertNotContains(by_admission, "Ada A")
+
+        by_roll = self.client.get(
+            url, {"academic_year": self.year.pk, "q": "8"}
+        )
+        self.assertContains(by_roll, "Zara Z")
+        self.assertNotContains(by_roll, "Maya M")
+        self.assertNotContains(by_roll, other.full_name)
+
+        missed = self.client.get(
+            url, {"academic_year": self.year.pk, "q": "nobody"}
+        )
+        self.assertContains(missed, "No students match this search.")
+        self.assertNotContains(missed, "Ada A")
+
+    def test_admin_can_add_students_table_column(self):
+        StudentBiodataRow.objects.create(
+            student=self.student,
+            label="Aadhaar last 4",
+            value="4321",
+        )
+        url = reverse(
+            "admin:school_classsection_class_students",
+            args=[self.vi_a.pk],
+        )
+        self.client.force_login(self.admin_user)
+        page = self.client.get(url, {"academic_year": self.year.pk})
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'aria-label="Edit table columns"')
+        self.assertContains(page, 'aria-label="Search students"')
+        self.assertNotContains(page, ">Edit</button>")
+        self.assertNotContains(page, "<th>Aadhaar last 4</th>")
+        self.assertNotContains(page, "4321")
+
+        posted = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "column_action": "add",
+                "label": "Aadhaar last 4",
+                "field_type": "text",
+            },
+        )
+        self.assertEqual(posted.status_code, 302)
+        column = StudentTableColumn.objects.get(label="Aadhaar last 4")
+        self.assertEqual(column.field_type, StudentTableColumn.FieldType.TEXT)
+
+        page = self.client.get(url, {"academic_year": self.year.pk})
+        self.assertContains(page, "<th>Aadhaar last 4</th>")
+        self.assertContains(page, "4321")
+        other_class = self.client.get(
+            reverse(
+                "admin:school_classsection_class_students",
+                args=[self.vi_b.pk],
+            ),
+            {"academic_year": self.year.pk},
+        )
+        self.assertContains(other_class, "<th>Aadhaar last 4</th>")
+
+        self.client.force_login(self.staff)
+        staff_page = self.client.get(url, {"academic_year": self.year.pk})
+        self.assertEqual(staff_page.status_code, 200)
+        self.assertContains(staff_page, "<th>Aadhaar last 4</th>")
+        self.assertContains(staff_page, "4321")
+        self.assertNotContains(staff_page, 'aria-label="Edit table columns"')
+        self.assertNotContains(staff_page, "Add column")
+        blocked = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "column_action": "add",
+                "label": "Secret",
+                "field_type": "text",
+            },
+        )
+        self.assertEqual(blocked.status_code, 403)
+        self.assertFalse(StudentTableColumn.objects.filter(label="Secret").exists())
+
+    def test_admin_students_table_editor_edits_moves_and_removes(self):
+        house = House.objects.create(name="Aravali")
+        StudentHouseMembership.objects.create(
+            student=self.student,
+            house=house,
+            academic_year=self.year,
+        )
+        second = Student.objects.create(
+            admission_number="CM-Z",
+            roll_number=2,
+            first_name="Zara",
+            last_name="Z",
+            date_of_birth=date(2014, 2, 2),
+            gender="female",
+            father_name="Old father",
+            class_section=self.vi_a,
+            academic_year=self.year,
+        )
+        url = reverse(
+            "admin:school_classsection_class_students",
+            args=[self.vi_a.pk],
+        )
+        self.client.force_login(self.admin_user)
+        view = self.client.get(url, {"academic_year": self.year.pk})
+        self.assertEqual(view.status_code, 200)
+        self.assertContains(view, 'aria-label="Edit table columns"')
+        self.assertContains(view, 'aria-label="Search students"')
+        self.assertLess(
+            view.content.find(b'aria-label="Search students"'),
+            view.content.find(b'aria-label="Edit table columns"'),
+        )
+        self.assertNotContains(view, 'aria-label="Done editing table"')
+        self.assertNotContains(view, 'aria-label="Undo"')
+        self.assertNotContains(view, 'aria-label="Redo"')
+        self.assertNotContains(view, 'data-table-pan="left"')
+        self.assertNotContains(view, 'data-table-pan="right"')
+        self.assertNotContains(view, 'aria-label="Move row up"')
+        self.assertNotContains(view, 'aria-label="Move Roll left"')
+        self.assertNotContains(view, "jnv-drag-handle")
+        self.assertNotContains(view, ">Edit</button>")
+        self.assertContains(view, "Father's name")
+        self.assertContains(view, "Old father")
+        self.assertContains(view, 'class="jnv-sticky-name"')
+
+        edit = self.client.get(url, {"academic_year": self.year.pk, "edit": "1"})
+        self.assertEqual(edit.status_code, 200)
+        self.assertContains(edit, 'aria-label="Done editing table"')
+        self.assertContains(edit, ">Done</a>")
+        self.assertContains(edit, 'aria-label="Undo"')
+        self.assertContains(edit, 'aria-label="Redo"')
+        self.assertContains(edit, 'title="Undo"')
+        self.assertContains(edit, 'title="Redo"')
+        self.assertNotContains(edit, ">Undo</button>")
+        self.assertNotContains(edit, ">Redo</button>")
+        self.assertContains(edit, 'class="jnv-edit-tool jnv-edit-tool-icon"')
+        self.assertContains(edit, 'data-table-pan="left"')
+        self.assertContains(edit, 'data-table-pan="right"')
+        self.assertContains(edit, 'aria-label="Scroll table left"')
+        self.assertContains(edit, 'aria-label="Scroll table right"')
+        self.assertContains(edit, ">Left</button>")
+        self.assertContains(edit, ">Right")
+        self.assertContains(edit, "jnv-sticky-handle")
+        self.assertContains(edit, 'class="jnv-sticky-name"')
+        self.assertContains(edit, "Add column")
+        self.assertContains(edit, 'aria-label="Move row down"')
+        self.assertContains(edit, 'aria-label="Move row up"')
+        self.assertContains(edit, 'aria-label="Remove Ada A from class"')
+        self.assertContains(edit, 'aria-label="Move Roll right"')
+        self.assertContains(edit, 'aria-label="Hide Blood group"')
+        self.assertContains(edit, 'class="jnv-select-cell"')
+        self.assertContains(edit, 'aria-label="Zara Z blood_group"')
+        self.assertContains(edit, '<option value="A+">A+</option>')
+        self.assertContains(edit, '<option value="O-">O-</option>')
+        self.assertContains(edit, 'disabled aria-label="Undo"')
+        self.assertContains(edit, 'disabled aria-label="Redo"')
+        self.assertNotContains(edit, "jnv-drag-handle")
+
+        saved = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "save_cell",
+                "student_id": str(second.pk),
+                "column_key": "father_name",
+                "value": "New father",
+            },
+        )
+        self.assertEqual(saved.status_code, 302)
+        second.refresh_from_db()
+        self.assertEqual(second.father_name, "New father")
+
+        named = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "save_cell",
+                "student_id": str(second.pk),
+                "column_key": "full_name",
+                "value": "Zara Maya Z",
+            },
+        )
+        self.assertEqual(named.status_code, 302)
+        second.refresh_from_db()
+        self.assertEqual(second.first_name, "Zara")
+        self.assertEqual(second.middle_name, "Maya")
+        self.assertEqual(second.last_name, "Z")
+
+        blood = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "save_cell",
+                "student_id": str(second.pk),
+                "column_key": "blood_group",
+                "value": "B+",
+            },
+        )
+        self.assertEqual(blood.status_code, 302)
+        second.refresh_from_db()
+        self.assertEqual(second.blood_group, "B+")
+        invalid_blood = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "save_cell",
+                "student_id": str(second.pk),
+                "column_key": "blood_group",
+                "value": "ZZ",
+            },
+        )
+        self.assertEqual(invalid_blood.status_code, 302)
+        second.refresh_from_db()
+        self.assertEqual(second.blood_group, "B+")
+
+        housed = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "save_cell",
+                "student_id": str(second.pk),
+                "column_key": "house",
+                "value": str(house.pk),
+            },
+        )
+        self.assertEqual(housed.status_code, 302)
+        self.assertEqual(
+            StudentHouseMembership.objects.get(
+                student=second, academic_year=self.year
+            ).house,
+            house,
+        )
+
+        extra = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "column_action": "add",
+                "label": "Aadhaar last 4",
+                "field_type": "text",
+            },
+        )
+        self.assertEqual(extra.status_code, 302)
+        extra_column = StudentTableColumn.objects.get(label="Aadhaar last 4")
+        extra_saved = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "save_cell",
+                "student_id": str(self.student.pk),
+                "column_key": f"extra:{extra_column.pk}",
+                "value": "4321",
+            },
+        )
+        self.assertEqual(extra_saved.status_code, 302)
+        self.assertEqual(
+            StudentBiodataRow.objects.get(
+                student=self.student, label="Aadhaar last 4"
+            ).value,
+            "4321",
+        )
+
+        moved_row = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "move_row",
+                "student_id": str(self.student.pk),
+                "direction": "down",
+            },
+        )
+        self.assertEqual(moved_row.status_code, 302)
+        self.student.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(self.student.roll_number, 2)
+        self.assertEqual(second.roll_number, 1)
+
+        moved_col = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "move_column",
+                "column_key": "full_name",
+                "direction": "left",
+            },
+        )
+        self.assertEqual(moved_col.status_code, 302)
+        page = self.client.get(url, {"academic_year": self.year.pk})
+        html = page.content.decode()
+        self.assertLess(html.find(">Name<"), html.find(">Admission No.<"))
+        self.assertLess(html.find(">Admission No.<"), html.find(">Father's name<"))
+
+        hidden = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "hide_column",
+                "column_key": "blood_group",
+            },
+        )
+        self.assertEqual(hidden.status_code, 302)
+        self.assertTrue(
+            StudentTableLayout.objects.get(column_key="blood_group").is_hidden
+        )
+        hidden_page = self.client.get(url, {"academic_year": self.year.pk})
+        self.assertNotContains(hidden_page, ">Blood group<")
+        self.assertContains(hidden_page, ">Name<")
+        edit_hidden = self.client.get(
+            url, {"academic_year": self.year.pk, "edit": "1"}
+        )
+        self.assertContains(edit_hidden, "Show Blood group")
+
+        deleted_extra = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "column_action": "delete",
+                "column_id": str(extra_column.pk),
+            },
+        )
+        self.assertEqual(deleted_extra.status_code, 302)
+        self.assertFalse(
+            StudentTableColumn.objects.filter(label="Aadhaar last 4").exists()
+        )
+        after_delete = self.client.get(url, {"academic_year": self.year.pk})
+        self.assertNotContains(after_delete, "<th>Aadhaar last 4</th>")
+
+        removed = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "delete_row",
+                "student_id": str(second.pk),
+            },
+        )
+        self.assertEqual(removed.status_code, 302)
+        self.assertTrue(Student.objects.filter(pk=second.pk).exists())
+        self.assertFalse(
+            StudentClassMembership.objects.filter(
+                student=second,
+                class_section=self.vi_a,
+                academic_year=self.year,
+            ).exists()
+        )
+        gone = self.client.get(url, {"academic_year": self.year.pk})
+        self.assertNotContains(gone, "CM-Z")
+        self.assertContains(gone, "Ada A")
+        self.assertContains(gone, "Removed Zara Maya Z from the class.")
+
+        restored = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "restore_row",
+                "student_id": str(second.pk),
+            },
+        )
+        self.assertEqual(restored.status_code, 302)
+        self.assertTrue(
+            StudentClassMembership.objects.filter(
+                student=second,
+                class_section=self.vi_a,
+                academic_year=self.year,
+            ).exists()
+        )
+
+        self.client.force_login(self.staff)
+        staff_edit = self.client.get(
+            url, {"academic_year": self.year.pk, "edit": "1"}
+        )
+        self.assertNotContains(staff_edit, 'aria-label="Done editing table"')
+        self.assertNotContains(staff_edit, 'aria-label="Undo"')
+        self.assertNotContains(staff_edit, 'aria-label="Redo"')
+        self.assertNotContains(staff_edit, 'data-table-pan="left"')
+        self.assertNotContains(staff_edit, 'data-table-pan="right"')
+        self.assertNotContains(staff_edit, "Add column")
+        self.assertNotContains(staff_edit, 'aria-label="Move row up"')
+        blocked = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "save_cell",
+                "student_id": str(self.student.pk),
+                "column_key": "father_name",
+                "value": "Blocked",
+            },
+        )
+        self.assertEqual(blocked.status_code, 403)
+        self.student.refresh_from_db()
+        self.assertNotEqual(self.student.father_name, "Blocked")
+
+    def test_students_table_undo_redo_reverts_cell_and_row(self):
+        second = Student.objects.create(
+            admission_number="CM-UNDO",
+            roll_number=2,
+            first_name="Zara",
+            last_name="Z",
+            date_of_birth=date(2014, 2, 2),
+            gender="female",
+            father_name="Old father",
+            blood_group="A+",
+            class_section=self.vi_a,
+            academic_year=self.year,
+        )
+        url = reverse(
+            "admin:school_classsection_class_students",
+            args=[self.vi_a.pk],
+        )
+        self.client.force_login(self.admin_user)
+        saved = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "save_cell",
+                "student_id": str(second.pk),
+                "column_key": "father_name",
+                "value": "New father",
+            },
+        )
+        self.assertEqual(saved.status_code, 302)
+        second.refresh_from_db()
+        self.assertEqual(second.father_name, "New father")
+
+        after_edit = self.client.get(
+            url, {"academic_year": self.year.pk, "edit": "1"}
+        )
+        self.assertContains(after_edit, 'aria-label="Undo"')
+        self.assertNotContains(after_edit, 'disabled aria-label="Undo"')
+        self.assertContains(after_edit, 'disabled aria-label="Redo"')
+        self.assertContains(after_edit, 'name="table_action" value="undo"')
+        self.assertContains(after_edit, 'name="table_action" value="redo"')
+
+        undone = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "undo",
+            },
+        )
+        self.assertEqual(undone.status_code, 302)
+        second.refresh_from_db()
+        self.assertEqual(second.father_name, "Old father")
+        after_undo = self.client.get(
+            url, {"academic_year": self.year.pk, "edit": "1"}
+        )
+        self.assertContains(after_undo, "Old father")
+        self.assertContains(after_undo, 'disabled aria-label="Undo"')
+        self.assertNotContains(after_undo, 'disabled aria-label="Redo"')
+
+        redone = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "redo",
+            },
+        )
+        self.assertEqual(redone.status_code, 302)
+        second.refresh_from_db()
+        self.assertEqual(second.father_name, "New father")
+
+        blood = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "save_cell",
+                "student_id": str(second.pk),
+                "column_key": "blood_group",
+                "value": "O-",
+            },
+        )
+        self.assertEqual(blood.status_code, 302)
+        second.refresh_from_db()
+        self.assertEqual(second.blood_group, "O-")
+        self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "undo",
+            },
+        )
+        second.refresh_from_db()
+        self.assertEqual(second.blood_group, "A+")
+
+        moved = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "move_row",
+                "student_id": str(self.student.pk),
+                "direction": "down",
+            },
+        )
+        self.assertEqual(moved.status_code, 302)
+        self.student.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(self.student.roll_number, 2)
+        self.assertEqual(second.roll_number, 1)
+        self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "undo",
+            },
+        )
+        self.student.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(self.student.roll_number, 1)
+        self.assertEqual(second.roll_number, 2)
+
+        moved_col = self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "move_column",
+                "column_key": "full_name",
+                "direction": "left",
+            },
+        )
+        self.assertEqual(moved_col.status_code, 302)
+        page = self.client.get(url, {"academic_year": self.year.pk})
+        html = page.content.decode()
+        self.assertLess(html.find(">Name<"), html.find(">Admission No.<"))
+        self.client.post(
+            url,
+            {
+                "academic_year": self.year.pk,
+                "table_action": "undo",
+            },
+        )
+        restored_cols = self.client.get(url, {"academic_year": self.year.pk})
+        html = restored_cols.content.decode()
+        self.assertLess(html.find(">Admission No.<"), html.find(">Name<"))
 
 
 class SessionGenerationTests(TestCase):
@@ -4701,7 +5586,7 @@ class SessionGenerationTests(TestCase):
         self.assertIn("start date must be on or before", inverted[0].errors[0])
 
     def test_house_and_school_generation_use_existing_duty_architecture(self):
-        house = House.objects.create(name="Aravali", code="AR")
+        house = House.objects.create(name="Aravali")
         HouseMasterAssignment.objects.create(
             staff=self.staff,
             house=house,
@@ -4788,7 +5673,7 @@ class ModDutyAndResponsibilityTests(TestCase):
             section_name="A",
             display_name="VI-A",
         )
-        self.house = House.objects.create(name="Aravali", code="AR")
+        self.house = House.objects.create(name="Aravali")
         self.teacher = User.objects.create_user(
             username="resp-teacher",
             password="x",
@@ -5037,8 +5922,166 @@ class ModDutyAndResponsibilityTests(TestCase):
             staff=self.other_staff,
             house=self.house,
             academic_year=self.year,
+            role=HouseStaffRole.ASSISTANT_HOUSE_TEACHER,
         )
         self.assertTrue(can_take_attendance(self.other_staff, self.house_session))
         self.assertEqual(self.house_session.responsible_staff, self.teacher)
+
+
+class HouseStaffAssignmentTests(TestCase):
+    def setUp(self):
+        self.year = AcademicYear.objects.create(
+            name="2026-27",
+            start_date=date(2026, 4, 1),
+            end_date=date(2027, 3, 31),
+            is_current=True,
+        )
+        self.house = House.objects.create(name="Aravali")
+        self.teacher = User.objects.create_user(
+            username="houseteacher",
+            password="x",
+            category=UserCategory.STAFF,
+        )
+        self.assistant = User.objects.create_user(
+            username="assistant",
+            password="x",
+            category=UserCategory.STAFF,
+        )
+        self.admin_user = User.objects.create_user(
+            username="admin1",
+            password="x",
+            category=UserCategory.ADMINISTRATION,
+            is_staff=True,
+            is_superuser=True,
+        )
+
+    def test_house_form_offers_teacher_and_assistant_roles(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(
+            reverse("admin:school_house_change", args=[self.house.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertIn("House Teacher", html)
+        self.assertIn("Assistant House Teacher", html)
+
+    def test_one_of_each_role_per_house_year(self):
+        HouseMasterAssignment.objects.create(
+            staff=self.teacher,
+            house=self.house,
+            academic_year=self.year,
+            role=HouseStaffRole.HOUSE_TEACHER,
+        )
+        HouseMasterAssignment.objects.create(
+            staff=self.assistant,
+            house=self.house,
+            academic_year=self.year,
+            role=HouseStaffRole.ASSISTANT_HOUSE_TEACHER,
+        )
+        extra = User.objects.create_user(
+            username="extra",
+            password="x",
+            category=UserCategory.STAFF,
+        )
+        with self.assertRaises(ValidationError):
+            HouseMasterAssignment.objects.create(
+                staff=extra,
+                house=self.house,
+                academic_year=self.year,
+                role=HouseStaffRole.HOUSE_TEACHER,
+            )
+
+    def test_house_pages_and_attendance_totals(self):
+        section = ClassSection.objects.create(
+            grade_name="VI",
+            section_name="A",
+            display_name="VI-A",
+        )
+        student = Student.objects.create(
+            admission_number="H1",
+            roll_number=1,
+            first_name="Hari",
+            last_name="H",
+            date_of_birth=date(2014, 1, 1),
+            gender="male",
+            class_section=section,
+            academic_year=self.year,
+        )
+        StudentHouseMembership.objects.create(
+            student=student,
+            house=self.house,
+            academic_year=self.year,
+        )
+        activity = ActivityType.objects.create(
+            name="House roll call",
+            takes_attendance=True,
+            default_audience_kind=AudienceKind.HOUSE,
+        )
+        day = date(2026, 8, 28)
+        session = ActivitySession.objects.create(
+            date=day,
+            academic_year=self.year,
+            activity_type=activity,
+            name="House roll call",
+            start_time=time(20, 0),
+            end_time=time(20, 30),
+            audience_kind=AudienceKind.HOUSE,
+            house=self.house,
+            responsible_staff=self.teacher,
+        )
+        self.client.force_login(self.admin_user)
+        changelist = self.client.get(reverse("admin:school_house_changelist"))
+        self.assertContains(changelist, self.house.name)
+        overview = self.client.get(
+            reverse("admin:school_house_house_overview", args=[self.house.pk])
+        )
+        overview_html = overview.content.decode()
+        year_row = overview_html.find('class="jnv-year-row"')
+        self.assertNotEqual(year_row, -1)
+        year_html = overview_html[year_row : year_row + 900]
+        self.assertIn(self.house.name, year_html)
+        self.assertIn("Academic year", year_html)
+        self.assertLess(year_html.find(self.house.name), year_html.find("Academic year"))
+        self.assertContains(overview, "House teacher")
+        self.assertContains(overview, 'id="house-teacher-profile"')
+        self.assertContains(overview, 'aria-label="View profile"')
+        self.assertContains(overview, "Students")
+        self.assertContains(overview, "Attendance")
+        students = self.client.get(
+            reverse("admin:school_house_house_students", args=[self.house.pk])
+        )
+        self.assertContains(students, student.full_name)
+        attendance = self.client.get(
+            reverse("admin:school_house_house_attendance", args=[self.house.pk]),
+            {"academic_year": self.year.pk, "date": day.isoformat()},
+        )
+        self.assertEqual(attendance.status_code, 200)
+        self.assertContains(attendance, student.full_name)
+        self.assertContains(attendance, "Mark all Present")
+        self.assertContains(attendance, "Mark all Absent")
+        self.assertContains(attendance, "Strength")
+        self.assertContains(attendance, ">OD</th>")
+        self.assertContains(attendance, ">Sick</th>")
+        self.assertContains(attendance, ">Leave</th>")
+        posted = self.client.post(
+            reverse("admin:school_house_house_attendance", args=[self.house.pk]),
+            {
+                "academic_year": self.year.pk,
+                "date": day.isoformat(),
+                f"status_{session.pk}_{student.pk}": AttendanceStatus.SICK,
+            },
+        )
+        self.assertEqual(posted.status_code, 302)
+        entry = AttendanceEntry.objects.get(
+            activity_session=session,
+            student=student,
+        )
+        self.assertEqual(entry.status, AttendanceStatus.SICK)
+        routine = self.client.get(
+            reverse("admin:school_house_house_routine", args=[self.house.pk])
+        )
+        self.assertEqual(routine.status_code, 200)
+        self.assertContains(routine, "Routine")
+
 
 

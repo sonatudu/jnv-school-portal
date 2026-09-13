@@ -18,6 +18,7 @@ from .models import (
     ClassTimetableEntry,
     House,
     HouseMasterAssignment,
+    HouseStaffRole,
     SchoolCalendarDay,
     StaffDutyAssignment,
     StudentGroup,
@@ -143,7 +144,7 @@ def _generate_class_sessions(calendar_day, slot, result):
     scheduled_ids = {entry.class_section_id for entry in entries}
 
     for section in ClassSection.objects.filter(is_active=True).order_by(
-        "grade_name",
+        "grade_number",
         "section_name",
     ):
         if section.id not in scheduled_ids:
@@ -221,16 +222,26 @@ def _generate_house_sessions(calendar_day, slot, result):
         if not assignments:
             result.skipped += 1
             result.warnings.append(
-                f"{slot.name} / {house}: no House Master assignment for this year."
+                f"{slot.name} / {house}: no House Teacher assignment for this year."
             )
             continue
 
-        responsible = assignments[0].staff
+        house_teachers = [
+            item
+            for item in assignments
+            if item.role == HouseStaffRole.HOUSE_TEACHER
+        ]
+        responsible = (house_teachers[0] if house_teachers else assignments[0]).staff
         if len(assignments) > 1:
-            others = ", ".join(str(item.staff) for item in assignments[1:])
-            result.warnings.append(
-                f"{slot.name} / {house}: using {responsible}; other house staff: {others}."
+            others = ", ".join(
+                str(item.staff)
+                for item in assignments
+                if item.staff_id != responsible.pk
             )
+            if others:
+                result.warnings.append(
+                    f"{slot.name} / {house}: using {responsible}; other house staff: {others}."
+                )
 
         _get_or_create_session(
             result,

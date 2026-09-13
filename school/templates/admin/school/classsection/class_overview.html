@@ -1,0 +1,141 @@
+{% extends "admin/base_site.html" %}
+{% block bodyclass %}{{ block.super }} jnv-hub{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
+{% include "admin/includes/year_row.html" with opened_name=class_section.display_name %}
+
+{% include "admin/school/classsection/_class_nav.html" %}
+
+{% if can_edit %}
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="academic_year" value="{% if selected_year %}{{ selected_year.pk }}{% endif %}">
+  <fieldset class="module aligned">
+    <table class="jnv-staff-table">
+      <thead>
+        <tr>
+          <th scope="col"><label for="class-teacher">Class Teacher</label></th>
+          <th scope="col"><label for="assistant-class-teacher">Assistant Class Teacher</label></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <div class="jnv-staff-cell">
+              <select id="class-teacher" name="class_teacher">
+                <option value="">—</option>
+                {% for teacher in teachers %}
+                  <option value="{{ teacher.pk }}"
+                          data-url="{% url 'admin:accounts_user_profile' teacher.user_id %}"
+                          {% if class_teacher and class_teacher.teacher_id == teacher.pk %}selected{% endif %}>{{ teacher }}</option>
+                {% endfor %}
+              </select>
+              <a id="class-teacher-profile" class="jnv-staff-info" aria-label="Teacher profile" hidden><span aria-hidden="true">i</span></a>
+            </div>
+          </td>
+          <td>
+            <div class="jnv-staff-cell">
+              <select id="assistant-class-teacher" name="assistant_class_teacher">
+                <option value="">—</option>
+                {% for teacher in teachers %}
+                  <option value="{{ teacher.pk }}"
+                          data-url="{% url 'admin:accounts_user_profile' teacher.user_id %}"
+                          {% if assistant_class_teacher and assistant_class_teacher.teacher_id == teacher.pk %}selected{% endif %}>{{ teacher }}</option>
+                {% endfor %}
+              </select>
+              <a id="assistant-class-teacher-profile" class="jnv-staff-info" aria-label="Teacher profile" hidden><span aria-hidden="true">i</span></a>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </fieldset>
+  <div class="submit-row">
+    <button type="submit" class="default">Save</button>
+  </div>
+</form>
+<script>
+(function () {
+  var classSelect = document.getElementById("class-teacher");
+  var assistantSelect = document.getElementById("assistant-class-teacher");
+  var classLink = document.getElementById("class-teacher-profile");
+  var assistantLink = document.getElementById("assistant-class-teacher-profile");
+
+  function refreshMenu(select) {
+    if (select) select.dispatchEvent(new Event("jnv-options-changed"));
+  }
+
+  function hideTaken(select, takenValue) {
+    Array.prototype.forEach.call(select.options, function (opt) {
+      if (!opt.value) return;
+      opt.hidden = Boolean(takenValue && opt.value === takenValue);
+    });
+  }
+
+  function updateLink(select, link) {
+    if (!select || !link) return;
+    var opt = select.options[select.selectedIndex];
+    var url = opt && opt.getAttribute("data-url");
+    if (opt && opt.value && url) {
+      link.href = url;
+      link.hidden = false;
+    } else {
+      link.removeAttribute("href");
+      link.hidden = true;
+    }
+  }
+
+  function syncTeacherOptions() {
+    if (!classSelect || !assistantSelect) return;
+    var classValue = classSelect.value;
+    var assistantValue = assistantSelect.value;
+    if (classValue && assistantValue === classValue) {
+      assistantSelect.value = "";
+      assistantValue = "";
+    }
+    hideTaken(assistantSelect, classValue);
+    hideTaken(classSelect, assistantValue);
+    refreshMenu(classSelect);
+    refreshMenu(assistantSelect);
+    updateLink(classSelect, classLink);
+    updateLink(assistantSelect, assistantLink);
+  }
+
+  if (classSelect) classSelect.addEventListener("change", syncTeacherOptions);
+  if (assistantSelect) assistantSelect.addEventListener("change", syncTeacherOptions);
+  syncTeacherOptions();
+})();
+</script>
+{% else %}
+  <table class="jnv-staff-table">
+    <thead>
+      <tr>
+        <th scope="col">Class Teacher</th>
+        <th scope="col">Assistant Class Teacher</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          {% if class_teacher %}
+            <a href="{% url 'admin:accounts_user_profile' class_teacher.teacher.user_id %}">{{ class_teacher.teacher }}</a>
+          {% else %}
+            Not assigned
+          {% endif %}
+        </td>
+        <td>
+          {% if assistant_class_teacher %}
+            <a href="{% url 'admin:accounts_user_profile' assistant_class_teacher.teacher.user_id %}">{{ assistant_class_teacher.teacher }}</a>
+          {% else %}
+            Not assigned
+          {% endif %}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+{% endif %}
+</div>
+{% endblock %}

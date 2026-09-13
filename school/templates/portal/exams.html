@@ -1,0 +1,19 @@
+{% extends "portal/inner.html" %}
+{% block title %}Exams · {{ vidyalaya.short_name|default:"JNV" }}{% endblock %}
+{% block panel %}
+  <h1>Examinations</h1>
+  <p class="muted">{% if term %}{{ term }}{% else %}No term published.{% endif %}. Parents see only their ward. Marks are hypothetical PT-1 scores.</p>
+  {% for student, rows in grouped %}
+    <h2>{{ student.full_name }} · {{ student.class_section }}</h2>
+    <table class="data">
+      <thead><tr><th>Subject</th><th>Marks</th><th>Max</th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+        <tr><td>{{ row.subject }}</td><td>{{ row.marks_obtained }}</td><td>{{ row.max_marks }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% empty %}
+    <p>No marks to show.</p>
+  {% endfor %}
+{% endblock %}

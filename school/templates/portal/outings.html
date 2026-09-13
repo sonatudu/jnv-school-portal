@@ -1,0 +1,64 @@
+{% extends "portal/inner.html" %}
+{% block title %}Gate pass · {{ vidyalaya.display_name|default:"JNV" }}{% endblock %}
+{% block panel %}
+  <div class="page-head">
+    <div>
+      <h1>Gate pass / outing board</h1>
+      <p class="muted">Hospital, sports, bank, and other out-of-campus movement. New passes are added in Admin. Here, duty staff can mark a student out or returned.</p>
+    </div>
+    <form class="filters" method="get">
+      <label>Date
+        <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+      </label>
+      <button class="btn" type="submit">Show</button>
+    </form>
+  </div>
+  <div class="table-wrap">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Student</th>
+        <th>Class</th>
+        <th>Purpose</th>
+        <th>Destination</th>
+        <th>Escort</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in passes %}
+      <tr>
+        <td>{{ item.departure_time }}{% if item.expected_return %}–{{ item.expected_return }}{% endif %}</td>
+        <td>{{ item.student.full_name }}</td>
+        <td>{{ item.student.class_section }}</td>
+        <td>{{ item.purpose }}</td>
+        <td>{{ item.destination|default:"—" }}</td>
+        <td>{{ item.escort_name|default:"—" }}</td>
+        <td>{{ item.get_status_display }}</td>
+        <td>
+          {% if item.status == "approved" %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="pass_id" value="{{ item.pk }}">
+              <input type="hidden" name="action" value="out">
+              <button class="btn" type="submit">Mark out</button>
+            </form>
+          {% elif item.status == "out" %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="pass_id" value="{{ item.pk }}">
+              <input type="hidden" name="action" value="returned">
+              <button class="btn gold" type="submit">Returned</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8">No gate passes for this date.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endblock %}

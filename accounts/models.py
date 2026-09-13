@@ -74,3 +74,30 @@ class User(AbstractUser):
         super().save(*args, **kwargs)
         if self.designation_id and self.designation.group_id:
             self.groups.add(self.designation.group)
+
+
+class UserBiodataRow(models.Model):
+    """Admin-added extra biodata field for one user."""
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="extra_biodata_rows",
+    )
+    label = models.CharField(max_length=120)
+    value = models.TextField(blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "label"],
+                name="unique_user_biodata_label",
+            ),
+        ]
+        verbose_name = "user biodata row"
+        verbose_name_plural = "user biodata rows"
+
+    def __str__(self):
+        return f"{self.user}: {self.label}"

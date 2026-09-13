@@ -1,0 +1,8 @@
+{% csrf_token %}
+{% if selected_year %}
+<input type="hidden" name="academic_year" value="{{ selected_year.pk }}">
+{% endif %}
+{% if search_query %}
+<input type="hidden" name="q" value="{{ search_query }}">
+{% endif %}
+<input type="hidden" name="edit" value="1">

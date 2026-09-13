@@ -1,0 +1,55 @@
+{% extends "admin/base_site.html" %}
+{% block bodyclass %}{{ block.super }} jnv-hub{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
+{% include "admin/includes/year_row.html" with opened_name=house.name %}
+
+{% include "admin/school/house/_house_nav.html" %}
+
+<table>
+  <thead>
+    <tr>
+      <th>Roll</th>
+      <th>Admission No.</th>
+      <th>Name</th>
+      <th>Class</th>
+      <th>Father's name</th>
+      <th>Mother's name</th>
+      <th>Gender</th>
+      <th>Date of birth</th>
+      <th>Category</th>
+      <th>Rural/Urban</th>
+      <th>Native district</th>
+      <th>Blood group</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for student in students %}
+    <tr>
+      <td>{{ student.roll_number }}</td>
+      <td>
+        <a href="{% url 'admin:school_student_biodata' student.pk %}?from_house={{ house.pk }}">{{ student.admission_number }}</a>
+      </td>
+      <td>
+        <a href="{% url 'admin:school_student_biodata' student.pk %}?from_house={{ house.pk }}">{{ student.full_name }}</a>
+      </td>
+      <td>{{ student.class_section }}</td>
+      <td>{{ student.father_name|default:"—" }}</td>
+      <td>{{ student.mother_name|default:"—" }}</td>
+      <td>{{ student.get_gender_display }}</td>
+      <td>{{ student.date_of_birth }}</td>
+      <td>{{ student.get_social_category_display|default:"—" }}</td>
+      <td>{{ student.get_area_type_display|default:"—" }}</td>
+      <td>{{ student.native_district|default:"—" }}</td>
+      <td>{{ student.get_blood_group_display|default:"—" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="12">No students in this house for the selected year.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

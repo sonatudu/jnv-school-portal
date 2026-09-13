@@ -1,0 +1,86 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static admin_filters %}
+
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static "admin/css/dashboard.css" %}">{% endblock %}
+
+{% block coltype %}colMS{% endblock %}
+
+{% block bodyclass %}{{ block.super }} dashboard{% endblock %}
+
+{% block nav-breadcrumbs %}{% endblock %}
+
+{% block nav-sidebar %}{% endblock %}
+
+{% block content %}
+<div class="jnv-desk">
+  {% include "includes/back_link.html" %}
+  <a class="jnv-desk-card" href="{% url 'admin:school_classsection_changelist' %}">
+    <strong>Classes</strong>
+    <span>Staff, students, attendance, routine</span>
+  </a>
+  <a class="jnv-desk-card" href="{% url 'admin:school_house_changelist' %}">
+    <strong>Houses</strong>
+    <span>Hostel staff, roll call, routine</span>
+  </a>
+  <a class="jnv-desk-card" href="{% url 'admin:school_student_changelist' %}">
+    <strong>Students</strong>
+    <span>Biodata and guardian links</span>
+  </a>
+  <a class="jnv-desk-card" href="{% url 'admin:school_activitysession_changelist' %}">
+    <strong>Attendance</strong>
+    <span>Sessions, coverage, reports</span>
+  </a>
+  <a class="jnv-desk-card" href="{% url 'admin:school_messmenu_changelist' %}">
+    <strong>Mess</strong>
+    <span>Daily four-meal menu</span>
+  </a>
+  <a class="jnv-desk-card" href="{% url 'admin:school_outingpass_changelist' %}">
+    <strong>Gate pass</strong>
+    <span>Hospital, sports, bank outings</span>
+  </a>
+  <a class="jnv-desk-card" href="{% url 'admin:accounts_user_changelist' %}">
+    <strong>Staff &amp; users</strong>
+    <span>Profiles, designations, logins</span>
+  </a>
+  <a class="jnv-desk-card" href="{% url 'portal-staff' %}">
+    <strong>Day board</strong>
+    <span>Open the staff portal</span>
+  </a>
+</div>
+<div id="content-main" class="app-list">
+  {% include "admin/app_list.html" with app_list=app_list show_changelinks=True %}
+</div>
+{% endblock %}
+
+{% block sidebar %}
+<div id="content-related">
+    <div class="module" id="recent-actions-module">
+        <h2>{% translate 'Recent actions' %}</h2>
+        <h3>{% translate 'My actions' %}</h3>
+            {% load log %}
+            {% get_admin_log 10 as admin_log for_user user %}
+            {% if not admin_log %}
+            <p>{% translate 'None available' %}</p>
+            {% else %}
+            <ul class="actionlist">
+            {% for entry in admin_log %}
+            <li class="{% if entry.is_addition %}addlink{% endif %}{% if entry.is_change %}changelink{% endif %}{% if entry.is_deletion %}deletelink{% endif %}">
+                <span class="visually-hidden">{% if entry.is_addition %}{% translate 'Added:' %}{% elif entry.is_change %}{% translate 'Changed:' %}{% elif entry.is_deletion %}{% translate 'Deleted:' %}{% endif %}</span>
+                {% if entry.is_deletion or not entry.get_admin_url %}
+                    {{ entry.object_repr|to_object_display_value }}
+                {% else %}
+                    <a href="{{ entry.get_admin_url }}">{{ entry.object_repr|to_object_display_value }}</a>
+                {% endif %}
+                <br>
+                {% if entry.content_type %}
+                    <span class="mini quiet">{% filter capfirst %}{{ entry.content_type.name }}{% endfilter %}</span>
+                {% else %}
+                    <span class="mini quiet">{% translate 'Unknown content' %}</span>
+                {% endif %}
+            </li>
+            {% endfor %}
+            </ul>
+            {% endif %}
+    </div>
+</div>
+{% endblock %}

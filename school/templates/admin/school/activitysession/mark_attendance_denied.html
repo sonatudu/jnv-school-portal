@@ -2,6 +2,8 @@
 {% load i18n %}
 
 {% block content %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
 <p>{{ message }}</p>
-<p><a href="{% url 'admin:school_activitysession_changelist' %}">{% trans "Back to activity sessions" %}</a></p>
+</div>
 {% endblock %}

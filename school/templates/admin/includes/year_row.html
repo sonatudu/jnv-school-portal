@@ -1,0 +1,20 @@
+<div class="jnv-year-row">
+  <p class="jnv-opened-name">{{ opened_name }}</p>
+  <form method="get" class="jnv-year-form">
+    <div class="jnv-year-field">
+      <span class="jnv-year-caption">Academic year</span>
+      <select name="academic_year" aria-label="Academic year"{% if not include_date %} onchange="this.form.submit()"{% endif %}>
+        {% for year in years %}
+          <option value="{{ year.pk }}" {% if selected_year and selected_year.pk == year.pk %}selected{% endif %}>{{ year }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if include_date %}
+    <label>
+      <span class="jnv-year-caption">Date</span>
+      <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+    </label>
+    <button type="submit" class="default">Show</button>
+    {% endif %}
+  </form>
+</div>

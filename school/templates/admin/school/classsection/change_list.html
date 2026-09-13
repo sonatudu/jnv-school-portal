@@ -1,0 +1,23 @@
+{% extends "admin/change_list.html" %}
+
+{% block pagination %}{% endblock %}
+
+{% block result_list %}
+<div class="jnv-opened">
+{% include "includes/back_link.html" %}
+<table class="jnv-directory">
+  <thead>
+    <tr><th>Class</th></tr>
+  </thead>
+  <tbody>
+    {% for class in class_list %}
+    <tr>
+      <td><a href="{% url 'admin:school_classsection_class_overview' class.pk %}">{{ class.display_name }}</a></td>
+    </tr>
+    {% empty %}
+    <tr><td>No classes yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

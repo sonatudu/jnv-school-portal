@@ -1,0 +1,108 @@
+{% extends "portal/inner.html" %}
+{% block title %}Today · {{ vidyalaya.display_name|default:"JNV" }}{% endblock %}
+{% block panel %}
+  <div class="page-head">
+    <div>
+      <h1>Day board · JNV East Singhbhum</h1>
+      {% if is_mod_today %}
+        <p class="banner">You are MOD (Member on Duty) for this date. You may take attendance where you are authorized, including covering sessions.</p>
+      {% elif mod %}
+        <p class="muted">MOD: {{ mod }}</p>
+      {% else %}
+        <p class="muted">No unique MOD assigned for this date.</p>
+      {% endif %}
+      {% if calendar_day %}
+        <p class="muted">{{ calendar_day.academic_year }}{% if calendar_day.routine %} · {{ calendar_day.routine }}{% endif %}{% if calendar_day.note %} · {{ calendar_day.note }}{% endif %}</p>
+      {% endif %}
+      <p class="muted">Strength from {{ snapshot.source|default:"today’s attendance" }}. Unmarked is not treated as absent.</p>
+    </div>
+    <form class="filters" method="get">
+      <label>Date
+        <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+      </label>
+      <button class="btn" type="submit">Show</button>
+    </form>
+  </div>
+  <div class="stat-grid">
+    <div class="stat"><b>{{ snapshot.strength }}</b><span>Strength</span></div>
+    <div class="stat present"><b>{{ snapshot.present }}</b><span>Present</span></div>
+    <div class="stat absent"><b>{{ snapshot.absent }}</b><span>Absent</span></div>
+    <div class="stat od"><b>{{ snapshot.on_duty }}</b><span>OD</span></div>
+    <div class="stat sick"><b>{{ snapshot.sick }}</b><span>Sick</span></div>
+    <div class="stat leave"><b>{{ snapshot.leave }}</b><span>Leave</span></div>
+    <div class="stat late"><b>{{ snapshot.late }}</b><span>Late</span></div>
+    <div class="stat"><b>{{ snapshot.unmarked }}</b><span>Unmarked</span></div>
+  </div>
+{% endblock %}
+{% block extra %}
+<div class="board-layout">
+  <div class="panel">
+    <h2>Sessions you may mark</h2>
+    {% for group in session_groups %}
+      <section class="period-block">
+        <header class="period-head">
+          <h3>{{ group.title }}</h3>
+          <p>{{ group.start }}–{{ group.end }} · {{ group.kind }}</p>
+        </header>
+        <div class="session-grid">
+          {% for item in group.items %}
+            <article class="session-tile">
+              <strong>{{ item.target }}</strong>
+              <span class="status-{{ item.status|slugify }}">{{ item.marked_count }} / {{ item.roster_count }} · {{ item.status }}</span>
+              {% if item.roster_count %}
+                <div class="progress" aria-hidden="true"><i style="width: {% widthratio item.marked_count item.roster_count 100 %}%;"></i></div>
+              {% endif %}
+              <a class="btn" href="{{ item.mark_url }}">Mark</a>
+            </article>
+          {% endfor %}
+        </div>
+      </section>
+    {% empty %}
+      <p class="muted">No sessions you are authorized to mark on this date.</p>
+    {% endfor %}
+  </div>
+  <aside class="board-side">
+    <div class="panel">
+      <h2>Mess today</h2>
+      {% if mess %}
+        <div class="meal-grid">
+          <dl class="meal-card"><dt>Breakfast</dt><dd>{{ mess.breakfast }}</dd></dl>
+          <dl class="meal-card"><dt>Lunch</dt><dd>{{ mess.lunch }}</dd></dl>
+          <dl class="meal-card"><dt>Evening</dt><dd>{{ mess.evening_snacks }}</dd></dl>
+          <dl class="meal-card"><dt>Dinner</dt><dd>{{ mess.dinner }}</dd></dl>
+        </div>
+        {% if mess.note %}<p class="muted">{{ mess.note }}</p>{% endif %}
+        <p class="link-row"><a href="{% url 'portal-mess' %}?date={{ selected_date|date:'Y-m-d' }}">Full mess menu</a></p>
+      {% else %}
+        <p class="muted">No mess menu entered for this date.</p>
+      {% endif %}
+    </div>
+    <div class="panel">
+      <h2>Duty roster</h2>
+      {% for duty in duties %}
+        <p>{{ duty.duty_type }} — {{ duty.staff }}</p>
+      {% empty %}
+        <p class="muted">No staff duties recorded for this date.</p>
+      {% endfor %}
+      <p class="muted">Open gate passes: {{ outing_open }}</p>
+      <p class="link-row">
+        <a href="{% url 'portal-exceptions' %}?date={{ selected_date|date:'Y-m-d' }}">Sick, OD &amp; leave</a>
+        <a href="{% url 'portal-outings' %}?date={{ selected_date|date:'Y-m-d' }}">Gate pass board</a>
+        <a href="{% url 'portal-life' %}">Vidyalaya life</a>
+      </p>
+    </div>
+    <div class="panel">
+      <h2>Circulars</h2>
+      {% for item in circulars %}
+        <div class="circular-item">
+          <strong>{{ item.title }}</strong><br>
+          <span class="muted">{{ item.published_on }}</span>
+        </div>
+      {% empty %}
+        <p class="muted">No circulars.</p>
+      {% endfor %}
+      <p class="link-row"><a href="{% url 'portal-circulars' %}">All circulars</a></p>
+    </div>
+  </aside>
+</div>
+{% endblock %}

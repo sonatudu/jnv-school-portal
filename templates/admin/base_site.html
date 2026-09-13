@@ -1,0 +1,49 @@
+{% extends "admin/base.html" %}
+{% load static %}
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+{% block extrahead %}
+{{ block.super }}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="icon" href="{% static 'school/logo.png' %}" type="image/png">
+<link rel="stylesheet" href="{% static 'school/admin.css' %}?v=edit14">
+<link rel="stylesheet" href="{% static 'school/select.css' %}?v=select16">
+<script src="{% static 'school/select.js' %}?v=select13" defer></script>
+{% endblock %}
+{% block bodyclass %}jnv-admin{% endblock %}
+{% block branding %}
+<div id="site-name" class="jnv-branding">
+  <a href="{% url 'admin:index' %}">
+    <img class="jnv-logo" src="{% static 'school/logo.png' %}" width="44" height="44" alt="">
+    <span class="jnv-brand-text">
+      <span class="jnv-brand-kicker">Navodaya Vidyalaya Samiti{% if vidyalaya %} · {{ vidyalaya.nvs_region }} Region{% endif %}</span>
+      <span class="jnv-brand-name">{% if vidyalaya %}{{ vidyalaya.short_name }}{% else %}{{ site_header|default:_('Django administration') }}{% endif %}</span>
+      {% if vidyalaya %}<span class="jnv-brand-place">{{ vidyalaya.campus }}</span>{% endif %}
+    </span>
+  </a>
+</div>
+{% if user.is_anonymous %}
+  {% include "admin/color_theme_toggle.html" %}
+{% endif %}
+{% endblock %}
+{% block nav-global %}
+{% if has_permission %}
+<nav class="jnv-admin-nav" aria-label="Vidyalaya shortcuts">
+  <a href="{% url 'portal-staff' %}">Day board</a>
+  <a href="{% url 'admin:school_classsection_changelist' %}">Classes</a>
+  <a href="{% url 'admin:school_house_changelist' %}">Houses</a>
+  <a href="{% url 'admin:school_student_changelist' %}">Students</a>
+  <a href="{% url 'admin:school_activitysession_changelist' %}">Sessions</a>
+  <a href="{% url 'admin:school_messmenu_changelist' %}">Mess</a>
+  <a href="{% url 'admin:school_circular_changelist' %}">Circulars</a>
+  <a href="{% url 'admin:school_vidyalayaprofile_changelist' %}">Vidyalaya</a>
+  <a href="{% url 'portal-life' %}">Vidyalaya life</a>
+  </nav>
+{% endif %}
+{% endblock %}
+{% block footer %}
+<div class="jnv-admin-footer">
+  {% if vidyalaya %}{{ vidyalaya.display_name }} · Est. {{ vidyalaya.established_year }} · {{ vidyalaya.motto }}{% else %}JNV East Singhbhum{% endif %}
+</div>
+{% endblock %}

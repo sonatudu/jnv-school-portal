@@ -1,0 +1,21 @@
+{% extends "portal/inner.html" %}
+{% block title %}Calendar · {{ vidyalaya.short_name|default:"JNV" }}{% endblock %}
+{% block panel %}
+  <h1>Vidyalaya calendar</h1>
+  <p class="muted">{% if year %}{{ year }} · {% endif %}CCA, games, pace-setting, assembly, and migration dates.</p>
+  <table class="data">
+    <thead><tr><th>Date</th><th>Event</th><th>Kind</th><th>Venue</th></tr></thead>
+    <tbody>
+      {% for item in events %}
+      <tr>
+        <td>{{ item.held_on }}</td>
+        <td>{{ item.title }}</td>
+        <td>{{ item.get_kind_display }}</td>
+        <td>{{ item.venue|default:"—" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4">No events recorded.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

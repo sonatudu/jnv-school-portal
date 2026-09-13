@@ -1,0 +1,52 @@
+{% extends "portal/inner.html" %}
+{% block title %}Sick, OD & leave · {{ vidyalaya.display_name|default:"JNV" }}{% endblock %}
+{% block panel %}
+  <div class="page-head">
+    <div>
+      <h1>Sick bay, OD, leave, and absence</h1>
+      <p class="muted">Rolled up from house roll call if it exists for the date, otherwise from class periods. If a student has more than one mark, sick / leave / OD / absent is preferred.</p>
+    </div>
+    <form class="filters" method="get">
+      <label>Date
+        <input type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+      </label>
+      <button class="btn" type="submit">Show</button>
+    </form>
+  </div>
+  <div class="stat-grid">
+    <div class="stat sick"><b>{{ snapshot.sick }}</b><span>Sick</span></div>
+    <div class="stat od"><b>{{ snapshot.on_duty }}</b><span>OD</span></div>
+    <div class="stat leave"><b>{{ snapshot.leave }}</b><span>Leave</span></div>
+    <div class="stat absent"><b>{{ snapshot.absent }}</b><span>Absent</span></div>
+  </div>
+  <div class="table-wrap">
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Class</th>
+        <th>Roll</th>
+        <th>Name</th>
+        <th>House</th>
+        <th>Status</th>
+        <th>From</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.student.class_section }}</td>
+        <td>{{ row.student.roll_number }}</td>
+        <td>{{ row.student.full_name }}</td>
+        <td>{% if row.house %}{{ row.house }}{% else %}—{% endif %}</td>
+        <td>
+          <span class="pill {% if row.status == 'sick' %}sick{% elif row.status == 'leave' %}leave{% elif row.status == 'on_duty' %}od{% else %}absent{% endif %}">{{ row.status_display }}</span>
+        </td>
+        <td>{{ row.session.name }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6">No sick, OD, leave, or absent marks on this snapshot.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endblock %}
