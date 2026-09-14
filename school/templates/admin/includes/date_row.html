@@ -1,0 +1,12 @@
+<form method="get" class="jnv-date-form">
+  {% if selected_year %}
+  <input type="hidden" name="academic_year" value="{{ selected_year.pk }}">
+  {% endif %}
+  <div class="jnv-datepicker" data-jnv-datepicker>
+    <input type="hidden" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+    <button type="button" class="jnv-datepicker-btn" aria-haspopup="dialog" aria-expanded="false" aria-label="Choose date">
+      <span class="jnv-datepicker-label">{{ selected_date|date:"j M Y" }}</span>
+    </button>
+    <div class="jnv-datepicker-panel" hidden></div>
+  </div>
+</form>

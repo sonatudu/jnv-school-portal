@@ -182,11 +182,20 @@ class ClassSectionAdmin(admin.ModelAdmin):
 
     def changelist_view(self, request, extra_context=None):
         extra_context = extra_context or {}
-        extra_context["class_list"] = ClassSection.objects.order_by(
+        query = (request.GET.get("q") or "").strip()
+        classes = ClassSection.objects.order_by(
             "grade_number",
             "section_name",
             "display_name",
         )
+        if query:
+            classes = classes.filter(
+                Q(display_name__icontains=query)
+                | Q(grade_name__icontains=query)
+                | Q(section_name__icontains=query)
+            )
+        extra_context["class_list"] = classes
+        extra_context["search_query"] = query
         return super().changelist_view(request, extra_context)
 
     def get_urls(self):
@@ -1242,7 +1251,12 @@ class HouseAdmin(admin.ModelAdmin):
 
     def changelist_view(self, request, extra_context=None):
         extra_context = extra_context or {}
-        extra_context["house_list"] = House.objects.order_by("name")
+        query = (request.GET.get("q") or "").strip()
+        houses = House.objects.order_by("name")
+        if query:
+            houses = houses.filter(name__icontains=query)
+        extra_context["house_list"] = houses
+        extra_context["search_query"] = query
         return super().changelist_view(request, extra_context)
 
     def get_urls(self):

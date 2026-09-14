@@ -80,37 +80,6 @@
     }
   }
   ready(function () {
-  var form = document.querySelector(".jnv-class-search");
-  if (form) {
-    var input = form.querySelector("#class-student-q");
-    var btn = form.querySelector(".jnv-class-search-toggle");
-    var hasQuery = form.getAttribute("data-has-query") === "1";
-
-    function openField() {
-      form.classList.add("is-open");
-      input.hidden = false;
-      btn.setAttribute("aria-expanded", "true");
-      input.focus();
-    }
-    function closeField() {
-      form.classList.remove("is-open");
-      input.hidden = true;
-      btn.setAttribute("aria-expanded", "false");
-    }
-
-    btn.addEventListener("click", function () {
-      if (!form.classList.contains("is-open")) {
-        openField();
-        return;
-      }
-      if (input.value.trim() || hasQuery) {
-        form.submit();
-        return;
-      }
-      closeField();
-    });
-  }
-
   document.querySelectorAll("form[data-confirm]").forEach(function (item) {
     item.addEventListener("submit", function (event) {
       if (!window.confirm(item.getAttribute("data-confirm"))) {

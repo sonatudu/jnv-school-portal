@@ -1,23 +1,25 @@
 {% extends "admin/change_list.html" %}
 
+{% block bodyclass %}{{ block.super }} jnv-hub{% endblock %}
+{% block content_title %}{% endblock %}
+{% block search %}{% endblock %}
 {% block pagination %}{% endblock %}
 
 {% block result_list %}
-<div class="jnv-opened">
-{% include "includes/back_link.html" %}
-<table class="jnv-directory">
-  <thead>
-    <tr><th>Class</th></tr>
-  </thead>
-  <tbody>
-    {% for class in class_list %}
-    <tr>
-      <td><a href="{% url 'admin:school_classsection_class_overview' class.pk %}">{{ class.display_name }}</a></td>
-    </tr>
-    {% empty %}
-    <tr><td>No classes yet.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="jnv-opened jnv-hub-list jnv-class-fill">
+    {% include "includes/back_link.html" %}
+<div class="jnv-page-head">
+  <h2 class="jnv-opened-name">Classes</h2>
+  {% include "admin/includes/page_search.html" with search_query=search_query search_input_id="class-list-q" search_placeholder="Search classes" search_aria="Search classes" %}
+</div>
+{% if class_list %}
+<div class="jnv-class-list" aria-label="Classes">
+  {% for class in class_list %}
+  <a href="{% url 'admin:school_classsection_class_overview' class.pk %}">{{ class.display_name }}</a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="jnv-directory-empty">No classes yet.</p>
+{% endif %}
 </div>
 {% endblock %}

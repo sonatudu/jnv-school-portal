@@ -32,6 +32,8 @@ CSRF_TRUSTED_ORIGINS = [
     "http://*.trycloudflare.com",
     "https://*.ngrok-free.app",
     "https://*.ngrok.io",
+    "https://*.lhr.life",
+    "https://*.localhost.run",
     "http://127.0.0.1:8000",
     "http://localhost:8000",
     "http://10.50.37.142:8000",
