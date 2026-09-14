@@ -4443,6 +4443,20 @@ class StudentClassMembershipTests(TestCase):
         self.assertIn(">VII-A</a>", html)
         self.assertLess(html.find(">VI-A</a>"), html.find(">VI-B</a>"))
         self.assertLess(html.find(">VI-B</a>"), html.find(">VII-A</a>"))
+        self.assertIn('class="jnv-opened-name"', html)
+        self.assertIn(">Classes</h2>", html)
+        self.assertIn('class="jnv-class-list"', html)
+        self.assertIn('aria-label="Search classes"', html)
+        self.assertNotIn(">Class</th>", html)
+        self.assertNotIn("<th>Class</th>", html)
+        self.assertNotIn('id="searchbar"', html)
+        self.assertNotIn('value="Search"', html)
+        filtered = self.client.get(
+            reverse("admin:school_classsection_changelist"),
+            {"q": "VI-A"},
+        )
+        self.assertContains(filtered, ">VI-A</a>")
+        self.assertNotContains(filtered, ">VII-A</a>")
 
     def test_class_overview_students_and_optional_assistant(self):
         self.client.force_login(self.admin_user)
@@ -4455,6 +4469,9 @@ class StudentClassMembershipTests(TestCase):
         html = response.content.decode()
         row_start = html.find('class="jnv-year-row"')
         self.assertNotEqual(row_start, -1)
+        nav_start = html.find('class="jnv-section-nav"')
+        self.assertNotEqual(nav_start, -1)
+        self.assertLess(row_start, nav_start)
         row_html = html[row_start : row_start + 900]
         self.assertIn("VI-A", row_html)
         self.assertIn("Academic year", row_html)
@@ -4504,6 +4521,24 @@ class StudentClassMembershipTests(TestCase):
             {"academic_year": self.year.pk, "date": self.day.isoformat()},
         )
         self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        year_row = html.find('class="jnv-year-row"')
+        nav = html.find('class="jnv-section-nav"')
+        datepicker = html.find("jnv-datepicker", nav)
+        date_input = html.find('name="date"', nav)
+        self.assertNotEqual(year_row, -1)
+        self.assertNotEqual(nav, -1)
+        self.assertLess(year_row, nav)
+        self.assertNotEqual(datepicker, -1)
+        self.assertNotEqual(date_input, -1)
+        self.assertGreater(datepicker, nav)
+        self.assertGreater(date_input, nav)
+        self.assertNotIn(">Date<", html[nav:])
+        self.assertNotIn(">Show<", html[nav:])
+        self.assertNotContains(
+            response,
+            "For each period, mark all Present or mark all Absent",
+        )
         self.assertContains(response, self.student.full_name)
         self.assertContains(response, self.day.isoformat())
         self.assertContains(response, "Mark all Present")
@@ -6032,12 +6067,18 @@ class HouseStaffAssignmentTests(TestCase):
         self.client.force_login(self.admin_user)
         changelist = self.client.get(reverse("admin:school_house_changelist"))
         self.assertContains(changelist, self.house.name)
+        self.assertContains(changelist, ">Houses</h2>")
+        self.assertContains(changelist, 'aria-label="Search houses"')
+        self.assertNotContains(changelist, 'value="Search"')
         overview = self.client.get(
             reverse("admin:school_house_house_overview", args=[self.house.pk])
         )
         overview_html = overview.content.decode()
         year_row = overview_html.find('class="jnv-year-row"')
         self.assertNotEqual(year_row, -1)
+        nav = overview_html.find('class="jnv-section-nav"')
+        self.assertNotEqual(nav, -1)
+        self.assertLess(year_row, nav)
         year_html = overview_html[year_row : year_row + 900]
         self.assertIn(self.house.name, year_html)
         self.assertIn("Academic year", year_html)
@@ -6056,6 +6097,24 @@ class HouseStaffAssignmentTests(TestCase):
             {"academic_year": self.year.pk, "date": day.isoformat()},
         )
         self.assertEqual(attendance.status_code, 200)
+        attendance_html = attendance.content.decode()
+        year_row = attendance_html.find('class="jnv-year-row"')
+        nav = attendance_html.find('class="jnv-section-nav"')
+        datepicker = attendance_html.find("jnv-datepicker", nav)
+        date_input = attendance_html.find('name="date"', nav)
+        self.assertNotEqual(year_row, -1)
+        self.assertNotEqual(nav, -1)
+        self.assertLess(year_row, nav)
+        self.assertNotEqual(datepicker, -1)
+        self.assertNotEqual(date_input, -1)
+        self.assertGreater(datepicker, nav)
+        self.assertGreater(date_input, nav)
+        self.assertNotIn(">Date<", attendance_html[nav:])
+        self.assertNotIn(">Show<", attendance_html[nav:])
+        self.assertNotContains(
+            attendance,
+            "For each period, mark all Present or mark all Absent",
+        )
         self.assertContains(attendance, student.full_name)
         self.assertContains(attendance, "Mark all Present")
         self.assertContains(attendance, "Mark all Absent")

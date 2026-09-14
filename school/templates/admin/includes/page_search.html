@@ -1,0 +1,6 @@
+<form method="get" class="jnv-page-search jnv-class-search{% if search_query %} is-open{% endif %}" role="search"{% if search_query %} data-has-query="1"{% endif %}>
+  <input id="{{ search_input_id|default:'jnv-page-q' }}" type="search" name="q" value="{{ search_query }}" placeholder="{{ search_placeholder|default:'Search' }}" aria-label="{{ search_aria|default:'Search' }}"{% if not search_query %} hidden{% endif %}>
+  <button type="button" class="jnv-class-search-toggle" aria-label="{{ search_aria|default:'Search' }}" aria-expanded="{% if search_query %}true{% else %}false{% endif %}" aria-controls="{{ search_input_id|default:'jnv-page-q' }}">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+  </button>
+</form>

@@ -269,11 +269,20 @@ ol.breadcrumbs a:active,
 
 #content { padding-top: 0.9rem; }
 #content h1,
-#content .titles h1 {
-  font-family: var(--jnv-sans);
+#content .titles h1,
+#content h2.jnv-opened-name,
+.jnv-opened-name {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--jnv-navy);
+  font-family: var(--jnv-sans);
+  font-size: 1.05rem;
   font-weight: 700;
-  font-size: 1.35rem;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  text-transform: none;
 }
 body.jnv-admin.jnv-hub #content h1,
 body.jnv-admin.jnv-hub .titles-and-tools {
@@ -309,6 +318,18 @@ fieldset.module > h2,
   overflow: hidden;
   box-shadow: none;
   background: var(--jnv-paper);
+}
+body.jnv-admin.jnv-hub #changelist.module,
+.jnv-opened.jnv-hub-list {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  overflow: visible;
+  padding: 0.2rem 0 0.35rem;
+  margin: 0 0 0.5rem;
+}
+.jnv-opened.jnv-hub-list .jnv-page-head {
+  margin-bottom: 0.35rem;
 }
 
 .app-list .module table th,
@@ -448,12 +469,107 @@ a:focus-visible { color: var(--jnv-navy); }
 .attendance-table,
 .overview-table,
 .register-table,
-.jnv-students-table,
-.jnv-directory {
+.jnv-students-table {
   width: 100%;
   border-collapse: collapse;
   background: var(--jnv-paper);
   border: 1px solid var(--jnv-line);
+}
+.jnv-opened.jnv-hub-list.jnv-class-fill {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 11.5rem);
+  margin-bottom: 0;
+}
+.jnv-class-list {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 1fr;
+  gap: 0.7rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.jnv-class-list a,
+.jnv-class-list a:link,
+.jnv-class-list a:visited {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 6.75rem;
+  padding: 1.15rem 0.85rem;
+  color: var(--jnv-navy) !important;
+  font-family: var(--jnv-sans);
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  text-align: center;
+  background: #fff;
+  border: 1px solid var(--jnv-line);
+  border-radius: 0.25rem;
+}
+.jnv-class-list a:hover,
+.jnv-class-list a:focus,
+.jnv-class-list a:focus-visible {
+  color: var(--jnv-navy) !important;
+  background: #f7f9fb;
+}
+@media (max-width: 48rem) {
+  .jnv-class-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.jnv-directory {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  list-style: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  align-items: stretch;
+}
+.jnv-directory li {
+  margin: 0;
+  min-width: 5.6rem;
+  width: auto;
+  max-width: max-content;
+  flex: 0 0 auto;
+}
+.jnv-directory a,
+.jnv-directory a:link,
+.jnv-directory a:visited {
+  display: block;
+  box-sizing: border-box;
+  padding: 0.4rem 0.65rem;
+  color: var(--jnv-navy) !important;
+  font-family: var(--jnv-sans);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  background: #fff;
+  border: 1px solid var(--jnv-line);
+  border-radius: 0.25rem;
+  white-space: nowrap;
+}
+.jnv-directory a:hover,
+.jnv-directory a:focus,
+.jnv-directory a:focus-visible {
+  background: #fff;
+  color: var(--jnv-navy) !important;
+}
+.jnv-directory-empty {
+  margin: 0;
+  color: var(--jnv-muted);
+  font-size: 0.84rem;
 }
 #content > table th,
 #content > table td,
@@ -462,9 +578,7 @@ a:focus-visible { color: var(--jnv-navy); }
 .class-attendance-table th,
 .class-attendance-table td,
 .jnv-students-table th,
-.jnv-students-table td,
-.jnv-directory th,
-.jnv-directory td {
+.jnv-students-table td {
   padding: 0.5rem 0.65rem;
   border-bottom: 1px solid var(--jnv-line);
   vertical-align: top;
@@ -572,7 +686,8 @@ body.jnv-admin .actions select {
 
 #content > form[method="get"] input[type="date"],
 .audit-form input[type="date"],
-.jnv-year-form input[type="date"] {
+.jnv-year-form input[type="date"],
+.jnv-date-form input[type="date"] {
   min-height: 1.55rem;
   font-family: var(--jnv-sans);
   color: var(--jnv-ink);
@@ -593,17 +708,21 @@ body.jnv-admin .actions select {
   margin: 0 0 0.85rem;
   padding: 0;
 }
-.jnv-opened-name {
+.jnv-opened-name,
+#content h2.jnv-opened-name,
+.module h2.jnv-opened-name,
+fieldset.module > h2.jnv-opened-name {
   margin: 0;
   padding: 0;
-  color: var(--jnv-navy);
+  color: var(--jnv-navy) !important;
   font-family: var(--jnv-sans);
   font-size: 1.05rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.3;
   border: 0;
-  background: none;
+  background: none !important;
+  text-transform: none;
 }
 .jnv-year-form {
   display: flex;
@@ -634,10 +753,197 @@ body.jnv-admin .actions select {
   color: var(--jnv-navy);
 }
 .jnv-year-form label,
-.jnv-year-form label .jnv-year-caption {
+.jnv-year-form label .jnv-year-caption,
+.jnv-date-form label,
+.jnv-date-form label .jnv-year-caption {
   font-size: 0.72rem;
   color: var(--jnv-muted);
 }
+.jnv-date-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.65rem 1.1rem;
+  margin: 0 0 0.85rem;
+  padding: 0;
+}
+.jnv-date-form label {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.55rem;
+  margin: 0;
+  font-weight: 500;
+  cursor: default;
+}
+.jnv-datepicker {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+}
+.jnv-datepicker-btn {
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+  color: var(--jnv-navy) !important;
+  font-family: var(--jnv-sans) !important;
+  font-size: 0.92rem !important;
+  font-weight: 500 !important;
+  line-height: 1.3 !important;
+  cursor: pointer;
+}
+.jnv-datepicker-btn:hover,
+.jnv-datepicker-btn:focus,
+.jnv-datepicker-btn:focus-visible {
+  background: none !important;
+  color: var(--jnv-navy) !important;
+  outline: none;
+}
+.jnv-datepicker-panel {
+  position: absolute;
+  z-index: 50;
+  left: 0;
+  top: calc(100% + 0.4rem);
+  width: 16.5rem;
+  padding: 0.65rem 0.7rem 0.75rem;
+  background: #fff;
+  border: 1px solid var(--jnv-line);
+  border-radius: 0.25rem;
+  box-shadow: 0 8px 24px rgba(18, 38, 58, 0.08);
+}
+.jnv-datepicker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  margin: 0 0 0.55rem;
+}
+.jnv-datepicker-month {
+  margin: 0;
+  flex: 1;
+  text-align: center;
+  color: var(--jnv-navy);
+  font-size: 0.88rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.jnv-datepicker-nav {
+  width: 1.55rem;
+  height: 1.55rem;
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  border: 1px solid var(--jnv-line) !important;
+  border-radius: 0.25rem !important;
+  background: #fff !important;
+  color: var(--jnv-navy) !important;
+  font-size: 1.05rem !important;
+  line-height: 1 !important;
+  cursor: pointer;
+}
+.jnv-datepicker-nav:hover,
+.jnv-datepicker-nav:focus,
+.jnv-datepicker-nav:focus-visible {
+  background: #eef2f6 !important;
+  outline: none;
+}
+.jnv-datepicker-week,
+.jnv-datepicker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.12rem;
+}
+.jnv-datepicker-week {
+  margin: 0 0 0.3rem;
+}
+.jnv-datepicker-week span {
+  color: var(--jnv-muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.jnv-datepicker-day,
+.jnv-datepicker-empty {
+  width: 100%;
+  aspect-ratio: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  border-radius: 0.25rem !important;
+  background: none !important;
+  color: var(--jnv-ink) !important;
+  font-family: var(--jnv-sans) !important;
+  font-size: 0.78rem !important;
+  font-weight: 400 !important;
+  line-height: 1 !important;
+}
+.jnv-datepicker-day {
+  cursor: pointer;
+}
+.jnv-datepicker-day:hover,
+.jnv-datepicker-day:focus,
+.jnv-datepicker-day:focus-visible {
+  background: #eef2f6 !important;
+  outline: none;
+}
+.jnv-datepicker-day.is-today {
+  box-shadow: inset 0 0 0 1px var(--jnv-line);
+}
+.jnv-datepicker-day.is-selected,
+.jnv-datepicker-day.is-selected:hover {
+  background: var(--jnv-navy) !important;
+  color: #fff !important;
+  font-weight: 650 !important;
+  box-shadow: none;
+}
+.jnv-page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin: 0 0 0.85rem;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+.jnv-page-head .jnv-opened-name {
+  margin: 0;
+}
+.jnv-page-search,
+.jnv-page-search-slot,
+#changelist #toolbar,
+#toolbar.jnv-page-search-slot {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  float: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+.jnv-page-head .jnv-page-search,
+.jnv-class-toolbar-end .jnv-page-search,
+.jnv-class-toolbar-end .jnv-class-search {
+  margin: 0;
+}
+#changelist-search input[type="submit"] {
+  display: none;
+}
+
 .jnv-class-toolbar {
   display: flex;
   flex-wrap: nowrap;
@@ -1504,6 +1810,31 @@ body.login input[type="submit"] {
 }
 
 html[data-theme="dark"] body.jnv-admin { background: #0d1824; }
+html[data-theme="dark"] .jnv-class-list a,
+html[data-theme="dark"] .jnv-class-list a:link,
+html[data-theme="dark"] .jnv-class-list a:visited,
+html[data-theme="dark"] .jnv-class-list a:hover,
+html[data-theme="dark"] .jnv-class-list a:focus,
+html[data-theme="dark"] .jnv-class-list a:focus-visible {
+  color: #e8eef5 !important;
+  background: #132536;
+  border-color: #2a4258;
+}
+html[data-theme="dark"] .jnv-class-list a:hover,
+html[data-theme="dark"] .jnv-class-list a:focus,
+html[data-theme="dark"] .jnv-class-list a:focus-visible {
+  background: #1b334c;
+}
+html[data-theme="dark"] .jnv-directory a,
+html[data-theme="dark"] .jnv-directory a:link,
+html[data-theme="dark"] .jnv-directory a:visited,
+html[data-theme="dark"] .jnv-directory a:hover,
+html[data-theme="dark"] .jnv-directory a:focus,
+html[data-theme="dark"] .jnv-directory a:focus-visible {
+  background: #132536;
+  color: #e8eef5 !important;
+  border-color: #2a4258;
+}
 html[data-theme="dark"] .module,
 html[data-theme="dark"] .jnv-desk,
 html[data-theme="dark"] .jnv-desk-card,
@@ -1515,6 +1846,7 @@ html[data-theme="dark"] body.jnv-admin select,
 html[data-theme="dark"] body.jnv-admin .actions select,
 html[data-theme="dark"] #content > form[method="get"] input[type="date"],
 html[data-theme="dark"] .jnv-year-form input[type="date"],
+html[data-theme="dark"] .jnv-date-form input[type="date"],
 html[data-theme="dark"] .audit-form input[type="date"],
 html[data-theme="dark"] .jnv-class-search input[type="search"] {
   background-color: #132536;

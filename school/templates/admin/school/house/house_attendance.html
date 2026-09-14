@@ -23,11 +23,11 @@
 {% block content %}
 <div class="jnv-opened">
 {% include "includes/back_link.html" %}
-{% include "admin/includes/year_row.html" with opened_name=house.name include_date=True %}
+{% include "admin/includes/year_row.html" with opened_name=house.name %}
 
 {% include "admin/school/house/_house_nav.html" %}
 
-<p>For each period, mark all Present or mark all Absent, then check or uncheck students. Use OD, Sick, or Leave where needed. Change the date to view or edit another day.</p>
+{% include "admin/includes/date_row.html" %}
 
 {% if not sessions %}
   <p>No attendance sessions for this house on {{ selected_date }}.</p>

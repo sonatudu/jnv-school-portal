@@ -1,23 +1,25 @@
 {% extends "admin/change_list.html" %}
 
+{% block bodyclass %}{{ block.super }} jnv-hub{% endblock %}
+{% block content_title %}{% endblock %}
+{% block search %}{% endblock %}
 {% block pagination %}{% endblock %}
 
 {% block result_list %}
-<div class="jnv-opened">
-{% include "includes/back_link.html" %}
-<table class="jnv-directory">
-  <thead>
-    <tr><th>House</th></tr>
-  </thead>
-  <tbody>
-    {% for house in house_list %}
-    <tr>
-      <td><a href="{% url 'admin:school_house_house_overview' house.pk %}">{{ house.name }}</a></td>
-    </tr>
-    {% empty %}
-    <tr><td>No houses yet.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="jnv-opened jnv-hub-list">
+    {% include "includes/back_link.html" %}
+<div class="jnv-page-head">
+  <h2 class="jnv-opened-name">Houses</h2>
+  {% include "admin/includes/page_search.html" with search_query=search_query search_input_id="house-list-q" search_placeholder="Search houses" search_aria="Search houses" %}
+</div>
+{% if house_list %}
+<ul class="jnv-directory" aria-label="Houses">
+  {% for house in house_list %}
+  <li><a href="{% url 'admin:school_house_house_overview' house.pk %}">{{ house.name }}</a></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="jnv-directory-empty">No houses yet.</p>
+{% endif %}
 </div>
 {% endblock %}
